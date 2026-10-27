@@ -30,6 +30,7 @@ Host network is needed so the app can reach the UGOS API on `127.0.0.1:9999`, an
 - **Google** (`/auth/login` → `/auth/callback`) and **email codes** (`/auth/email/*`, Resend): on when configured in Settings. The email must be linked to a NAS user in Settings → People (`users.resolve_nas_user`). There is no domain-wide or name-matching fallback.
 - Sessions are signed cookies (5 days). Every session holds a NAS username, uid and gid; uid must be at least 1000. Google and email sessions also record how they signed in, and are checked against Settings → People on every request, so unlinking an email signs it out at once.
 - UGOS replies only count when they say `code: 200` and return a session token; anything else is a failed sign-in or 2FA code.
+- **Mac app and `ugd`** (`/cli/authorize` → `POST /api/cli/token`): a PKCE sign-in approved in the browser from a cookie session, then `Authorization: Bearer ugd_…` on every call (`app/cli_tokens.py`; details in [MAC-APP.md](MAC-APP.md)). Bearer requests skip the cookie cross-site check and never set the share cookie. Admin routes, `/api/share` and `/api/lan-handoff` accept only the cookie.
 - **LAN hand-off:** Google always returns to the public address. If sign-in started on the LAN address, the callback mints a 90-second signed token and redirects to `/auth/lan-handoff` on the LAN origin, which sets the cookie there.
 
 ## Settings

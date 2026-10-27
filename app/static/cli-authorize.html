@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="color-scheme" content="dark light" />
+  <title>Drive</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20261027-mac" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=20261027-mac" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500&amp;display=swap" />
+  <style>
+    html, body { margin: 0; background: #0E0E0D; color: #F2F0EA; color-scheme: dark; }
+    html.light, html.light body { background: #F7F5EF; color: #16161A; color-scheme: light; }
+  </style>
+  <link rel="stylesheet" href="/assets/app.css?v=20261027-mac" />
+  <script type="module" src="/assets/cli-authorize.js?v=20261027-mac"></script>
+</head>
+<body class="share-body">
+<div class="share">
+  <header class="share__bar">
+    <div class="wordmark">
+      <span class="wordmark__mark" aria-hidden="true"></span>
+      <span class="wordmark__name" data-drive-name>Drive</span>
+    </div>
+  </header>
+  <main class="share__main">
+    <section class="share__card cli-auth" id="cli-auth" aria-live="polite">
+      <p id="cli-loading">Loading…</p>
+
+      <div id="cli-signin" hidden>
+        <h1 class="cli-auth__title">Sign in to connect your Mac</h1>
+        <p>Sign in with your NAS account in the tab this opens, then come back here. This page updates by itself.</p>
+        <div class="cli-auth__actions">
+          <a class="btn btn--primary" href="/" target="_blank" rel="noopener">Sign in</a>
+        </div>
+      </div>
+
+      <form id="cli-consent" method="post" action="/api/cli/authorize" hidden>
+        <h1 class="cli-auth__title">Connect this Mac?</h1>
+        <p><strong id="cli-device"></strong> wants to use the drive as <strong id="cli-user"></strong>.</p>
+        <p>Check that the app shows this code:</p>
+        <p class="cli-auth__code" id="cli-code" aria-label="Confirmation code"></p>
+        <p class="cli-auth__note">It can list, read, upload, change and delete every file you can reach here. Only allow this if you just clicked Sign in in the Mac app (or ran <code>ugd login</code>) and the code matches.</p>
+        <input type="hidden" name="port" id="cli-port" />
+        <input type="hidden" name="state" id="cli-state" />
+        <input type="hidden" name="challenge" id="cli-challenge" />
+        <input type="hidden" name="device" id="cli-device-field" />
+        <div class="cli-auth__actions">
+          <button type="submit" class="btn btn--primary" name="allow" value="1">Allow</button>
+          <button type="submit" class="btn" name="allow" value="0">Deny</button>
+        </div>
+      </form>
+
+      <div id="cli-error" hidden>
+        <h1 class="cli-auth__title">Can't connect this Mac</h1>
+        <p id="cli-error-text"></p>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

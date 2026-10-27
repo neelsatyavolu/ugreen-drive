@@ -4,7 +4,7 @@ A fast web file browser for Ugreen NAS (UGOS Pro). Sign in with your NAS account
 
 It's a fork of [InFocus Drive](https://github.com/neelsatyavolu/infocus-drive), which runs in production for a student media program, with the school-specific parts taken out and setup reduced to pasting one file into the UGOS Docker app.
 
-**Stack:** FastAPI (Python 3.12) · vanilla ES modules (no framework, no build step) · nginx · one Docker image
+**Stack:** FastAPI (Python 3.12) · vanilla ES modules (no framework, no build step) · nginx · one Docker image · a SwiftUI Mac app with a Go helper
 
 ## Features
 
@@ -15,6 +15,7 @@ It's a fork of [InFocus Drive](https://github.com/neelsatyavolu/infocus-drive), 
 - **Previews.** Images, video and audio (with seeking), PDF, text and Markdown. Video thumbnails come from ffmpeg.
 - **Share links.** Expiring public links for a file or a whole folder.
 - **LAN fast path.** When your browser can reach the NAS directly, the drive switches to its LAN address and skips the tunnel.
+- **Mac app.** A menu-bar app keeps the drive mounted in Finder at home and away, signed in with your NAS account, with live upload progress and automatic updates. See [docs/MAC-APP.md](docs/MAC-APP.md).
 - **Settings in the browser.** Name, public address, sign-in methods and linked people are set from the web UI, not config files.
 
 ## Set it up
@@ -27,6 +28,8 @@ You need a Ugreen NAS on UGOS Pro with the Docker app installed (App Center → 
 4. Open `http://<NAS-IP>:8790` and sign in with your UGOS account.
 
 That's all for use at home. The first start creates its own secrets in the project's `config` folder, so there's nothing to fill in.
+
+**On a Mac:** in the drive, open **Connect in Finder** and paste the install line into Terminal. The menu-bar app opens, you click **Sign in**, approve it in the browser, and the drive appears in Finder.
 
 ### Use it away from home (Cloudflare Tunnel)
 
@@ -67,6 +70,8 @@ The container runs as root with only `SETUID`/`SETGID` so it can switch to the s
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r app/requirements.txt pytest
+(cd cli && go test ./...)               # ugd, the Mac app's helper
+(cd mac && swift test)                 # the Mac app
 .venv/bin/python -m pytest -q          # backend tests
 node --test tests/*.cjs                # frontend tests (markdown test needs jsdom)
 .venv/bin/python scripts/dev_server.py # local UI on http://127.0.0.1:8787, admin / dev

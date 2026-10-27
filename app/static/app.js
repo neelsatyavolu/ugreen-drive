@@ -2,9 +2,9 @@
  * ugreen-drive — file browser front end.
  * Talks to the FastAPI backend in api.js and renders the Machine & Ink UI.
  */
-import { bindEmailSignIn } from "./email-sign-in.js?v=20261026-ugd2";
-import * as api from "./api.js?v=20261026-ugd2";
-import { ApiError } from "./api.js?v=20261026-ugd2";
+import { bindEmailSignIn } from "./email-sign-in.js?v=20261027-mac";
+import * as api from "./api.js?v=20261027-mac";
+import { ApiError } from "./api.js?v=20261027-mac";
 import {
   describeKind,
   displayName,
@@ -20,9 +20,9 @@ import {
   isUnderRecycle,
   pathParts,
   previewKind,
-} from "./format.js?v=20261026-ugd2";
-import { $, el, icon, show } from "./dom.js?v=20261026-ugd2";
-import { openSettingsModal } from "./settings.js?v=20261026-ugd2";
+} from "./format.js?v=20261027-mac";
+import { $, el, icon, show } from "./dom.js?v=20261027-mac";
+import { openSettingsModal } from "./settings.js?v=20261027-mac";
 import {
   setQuickScope,
   listFavorites,
@@ -31,7 +31,7 @@ import {
   listRecents,
   pushRecent,
   removePath,
-} from "./quick.js?v=20261026-ugd2";
+} from "./quick.js?v=20261027-mac";
 
 const THEME_KEY = "ifd-theme";
 const VIEW_KEY = "ifd-view";
@@ -2409,7 +2409,7 @@ function openPreview(item) {
     downloadItems([item]);
     return;
   }
-  import("./viewer.js?v=20261026-ugd2").then(({ openPreview: openViewer }) => {
+  import("./viewer.js?v=20261027-mac").then(({ openPreview: openViewer }) => {
     openViewer(item, {
       siblings: visibleItems().filter((entry) => previewKind(entry)),
       downloadUrl: api.downloadUrl,
@@ -3314,6 +3314,8 @@ async function copyText(value, button) {
   }
 }
 
+const MAC_APP_ZIP = "https://github.com/neelsatyavolu/ugreen-drive/releases/latest/download/Ugreen-Drive-mac.zip";
+
 function openFinderConnectModal() {
   const nd = state.me?.network_drive || {};
   const host = nd.host || "(your NAS IP)";
@@ -3337,17 +3339,26 @@ function openFinderConnectModal() {
     ]);
   }
 
+  const installCmd = `curl -fsSL ${location.origin}/mac/install.sh | sh`;
+
   const body = el("div", { class: "modal__body" }, [
     el("div", { class: "modal__lead" }, [
       el("div", { class: "modal__badge" }, [icon("#i-hdd", 17)]),
       el("div", {}, [
         el("h3", { text: "Connect in Finder" }),
         el("p", {
-          text: "Mount the NAS as a network drive on the same network as the NAS. Use your NAS username and password.",
+          text: "The Mac app puts the drive in Finder at home and away, keeps it mounted and reconnects by itself. It lives in the menu bar.",
         }),
       ]),
     ]),
 
+    copyRow("Install the Mac app", installCmd, "Paste in Terminal. It installs to Applications and opens the app; sign in with your NAS account. Needs macOS 13 or later."),
+    el("p", { class: "finder-row__hint" }, [
+      el("a", { href: MAC_APP_ZIP, target: "_blank", rel: "noopener", text: "Download the .zip instead" }),
+      document.createTextNode(" (then enter this drive's address in the app)."),
+    ]),
+
+    el("h4", { class: "finder-sub", text: "Without the app (home network only)" }),
     el("ol", { class: "finder-steps" }, [
       el("li", { text: "Finder → Go → Connect to Server… (⌘K). On Windows: File Explorer → This PC → Map network drive." }),
       el("li", { text: "Paste the server address below, then pick a shared folder." }),

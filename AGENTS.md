@@ -1,6 +1,6 @@
 # AGENTS.md: ugreen-drive
 
-A web file browser for Ugreen NAS (UGOS Pro), shipped as one Docker image. FastAPI backend, vanilla ES-module frontend, nginx in the same container. Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Look and tokens: [DESIGN.md](DESIGN.md).
+A web file browser for Ugreen NAS (UGOS Pro), shipped as one Docker image, plus a Mac menu-bar app that mounts it in Finder. FastAPI backend, vanilla ES-module frontend, nginx in the same container; SwiftUI app with a bundled Go helper (`ugd`). Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Look and tokens: [DESIGN.md](DESIGN.md).
 
 ## Public repository
 
@@ -31,11 +31,14 @@ app/shares.py            Shared-folder discovery (smbshare.conf) and access chec
 app/fsops.py             Path-safe file operations as the NAS user
 app/ugos_api.py          UGOS login API (password, 2FA) and personal-folder calls
 app/email_auth.py        Email-code sign-in (Resend)
+app/cli_tokens.py        Mac app / `ugd` sign-ins: PKCE codes and hashed bearer tokens
 app/static/              index.html, app.js, api.js, settings.js, viewer.js, player.js, share.*
 docker/nginx.conf.template  nginx inside the image; __WEB_PORT__ filled by the entrypoint
 scripts/entrypoint.sh    Starts nginx, the app and upload workers; watchdog
 scripts/dev_server.py    Local UI preview with sample files and a fake sign-in
 docker-compose.yml       What users paste into UGOS → Docker → Project
+cli/                     `ugd` (Go): sign-in, file commands, the WebDAV helper Finder mounts
+mac/                     Ugreen Drive.app (SwiftUI): build.sh, sign-release.sh; docs/MAC-APP.md
 ```
 
 ## UX rules
@@ -51,7 +54,7 @@ docker-compose.yml       What users paste into UGOS → Docker → Project
 
 ## Working on it
 
-- Tests: `.venv/bin/python -m pytest -q` and `node --test tests/*.cjs`. CI runs both and builds the multi-arch image to `ghcr.io/neelsatyavolu/ugreen-drive` on pushes to `main` and `v*` tags.
+- Tests: `.venv/bin/python -m pytest -q`, `node --test tests/*.cjs`, `(cd cli && go test ./...)` and `(cd mac && swift test)`. CI runs all four and builds the multi-arch image to `ghcr.io/neelsatyavolu/ugreen-drive` on pushes to `main` and `v*` tags.
 - UI changes: bump the `?v=` cache-bust on every changed asset import in `index.html`, `share.html` and the JS modules.
 - Check the UI with `scripts/dev_server.py` (admin / dev) at desktop and phone widths, in both themes.
 - Keep changes surgical and match the surrounding style. New frontend features go in their own module rather than growing `app.js`.

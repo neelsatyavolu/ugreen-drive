@@ -16,6 +16,7 @@ TEST_ENV = {
     "UGOS_ADMIN_PATH": "http://192.168.1.50:9999/",
     "CONFIG_DIR": _CONFIG_DIR,
     "EMAIL_SIGN_IN_DB_PATH": str(Path(_CONFIG_DIR) / "email_sign_in.sqlite3"),
+    "CLI_TOKENS_DB_PATH": str(Path(_CONFIG_DIR) / "cli_tokens.sqlite3"),
 }
 for _key, _value in TEST_ENV.items():
     os.environ.setdefault(_key, _value)

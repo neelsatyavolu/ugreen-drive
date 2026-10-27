@@ -25,6 +25,35 @@ jobs:
       - run: npm install --no-save --no-package-lock jsdom@26.1.0
       - run: node --test tests/*.cjs
 
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+      - run: GOOS=windows go build ./...
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - name: Test the Mac app
+        working-directory: mac
+        run: swift test
+      - name: Build the Mac app (bundles ugd)
+        run: VERSION=0.0.0 mac/build.sh
+
   image:
     needs: test
     if: github.event_name == 'push'

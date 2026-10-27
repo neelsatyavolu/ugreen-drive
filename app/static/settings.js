@@ -2,9 +2,9 @@
  * Admin Settings: drive name and addresses, sign-in methods, linked sign-ins.
  * NAS administrators only (the server checks too). Saved to /config/settings.json.
  */
-import * as api from "./api.js?v=20261026-ugd2";
-import { ApiError } from "./api.js?v=20261026-ugd2";
-import { el, icon } from "./dom.js?v=20261026-ugd2";
+import * as api from "./api.js?v=20261027-mac";
+import { ApiError } from "./api.js?v=20261027-mac";
+import { el, icon } from "./dom.js?v=20261027-mac";
 
 const SECRET_KEYS = ["google_client_secret", "resend_api_key"];
 

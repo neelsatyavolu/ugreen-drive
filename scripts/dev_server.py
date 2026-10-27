@@ -24,6 +24,7 @@ for share in ("Photos", "Documents", "Media"):
 os.environ.update(
     CONFIG_DIR=str(DATA / "config"),
     EMAIL_SIGN_IN_DB_PATH=str(DATA / "config" / "email.sqlite3"),
+    CLI_TOKENS_DB_PATH=str(DATA / "config" / "cli_tokens.sqlite3"),
     DRIVE_ROOT=str(DATA / "volume1"),
     SHARES_VOLUME=str(DATA / "volume1"),
     SHARES_VOLUMES=str(DATA / "volume1"),
@@ -36,6 +37,7 @@ sys.path.insert(0, str(ROOT / "app"))
 
 import uvicorn  # noqa: E402
 
+import cli_tokens  # noqa: E402
 import main  # noqa: E402
 import users  # noqa: E402
 
@@ -45,6 +47,8 @@ users._pwd_user = main._pwd_user
 main.nas_password_login = lambda base, u, p, **kw: {"ok": p == "dev" and u == "admin", "need_otp": False}
 main.is_nas_admin = lambda name: name == "admin"
 main.list_nas_usernames = lambda: ["admin", "family"]
+# The Mac app and `ugd login` work against this server too.
+cli_tokens._nas_account = lambda name, uid=None: _me if name == "admin" and uid in (None, _me.pw_uid) else None
 
 if __name__ == "__main__":
     print(f"Sign in as admin / dev. Sample files: {DATA}")

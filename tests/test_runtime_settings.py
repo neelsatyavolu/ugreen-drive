@@ -49,8 +49,8 @@ def test_defaults_come_from_the_lan_address(fresh):
 def test_saved_values_override_env_and_clearing_falls_back(fresh):
     fresh.drive_name = "Env Name"
     runtime_settings.apply(fresh)
-    runtime_settings.update({"drive_name": "n3el drive", "public_base_url": "https://drive.example.com/"}, None, fresh)
-    assert fresh.drive_name == "n3el drive"
+    runtime_settings.update({"drive_name": "Home Drive", "public_base_url": "https://drive.example.com/"}, None, fresh)
+    assert fresh.drive_name == "Home Drive"
     assert fresh.public_base_url == "https://drive.example.com"
     runtime_settings.update({"drive_name": ""}, None, fresh)
     assert fresh.drive_name == "Env Name"  # an empty saved value falls back to the env default

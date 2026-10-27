@@ -1315,6 +1315,20 @@ body.is-resizing-sidebar * {
   }
 }
 
+.finder-sub {
+  margin: 22px 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.finder-row__hint a {
+  color: var(--brand-green);
+}
+
 .finder-steps {
   margin: 0 0 14px;
   padding-left: 1.25rem;
@@ -5048,4 +5062,44 @@ a.share__crumb:hover {
   .share__title {
     font-size: 18px;
   }
+}
+
+/* Mac app sign-in approval (/cli/authorize) */
+.cli-auth {
+  max-width: 460px;
+  margin-top: 8vh;
+  line-height: 1.55;
+}
+
+.cli-auth__title {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.cli-auth__note {
+  color: hsl(var(--muted-foreground));
+  font-size: 13.5px;
+}
+
+.cli-auth code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.cli-auth__code {
+  margin: 4px 0 14px;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+
+.cli-auth__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
 }

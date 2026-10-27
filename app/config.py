@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_email: str = ""
     email_sign_in_db_path: str = "/config/email_sign_in.sqlite3"
+    # Mac app / `ugd` sign-ins (hashed tokens).
+    cli_tokens_db_path: str = "/config/cli_tokens.sqlite3"
     config_dir: str = "/config"
 
     session_cookie: str = "ugreen_drive_session"

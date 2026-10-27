@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 from html import escape as html_escape
 import mimetypes
 import os
@@ -12,6 +16,7 @@ from typing import Any, AsyncIterator
 from urllib.parse import quote, urlencode, urlparse
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -28,6 +33,7 @@ from chunk_upload import (
     status as chunk_upload_status,
     write_chunk,
 )
+import cli_tokens
 from config import get_settings, require_strong_session_secret
 import personal_folders
 import runtime_settings
@@ -129,7 +135,10 @@ async def asset_cache_headers(request: Request, call_next):  # type: ignore[no-u
         # CDN-Cache-Control keeps Cloudflare from storing private JPEGs at the edge.
         response.headers["Cache-Control"] = "private, max-age=604800"
         response.headers["CDN-Cache-Control"] = "no-store"
-    elif path.startswith(("/api/", "/auth/")):
+    elif path == "/assets/cli-authorize.html":
+        response.headers.update(_CLI_PAGE_HEADERS)
+        response.headers["Cache-Control"] = "no-store"
+    elif path.startswith(("/api/", "/auth/", "/cli/", "/mac/")):
         # Listings differ by X-Drive-Share / ?share= — must not be shared-cached.
         response.headers["Cache-Control"] = "private, no-store, no-cache, must-revalidate"
         response.headers["CDN-Cache-Control"] = "no-store"
@@ -169,8 +178,9 @@ def _origin_allowed(request: Request, origin: str) -> bool:
 
 @app.middleware("http")
 async def block_cross_site_writes(request: Request, call_next):  # type: ignore[no-untyped-def]
-    """Cookie mutations must come from this site."""
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+    """Cookie mutations must come from this site. Bearer calls (Mac app, `ugd`) are not cookies."""
+    bearer = (request.headers.get("authorization") or "").lower().startswith("bearer ")
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not bearer:
         site = (request.headers.get("sec-fetch-site") or "").lower()
         origin = request.headers.get("origin")
         if site == "cross-site" or (origin is not None and not _origin_allowed(request, origin)):
@@ -230,7 +240,79 @@ def _safe_next_url(raw: str | None) -> str:
     return "/"
 
 
+# --- LAN route for the Mac app ----------------------------------------------
+# At home the app's helper talks to LAN_ORIGIN directly (plain HTTP, no tunnel).
+# It first proves that host is this Drive (it must sign a nonce with the
+# session secret, and only answers direct LAN requests, so the proof can't be
+# relayed through the internet), then trades its sign-in for a short-lived
+# LAN-only token: the long-lived token never crosses the LAN.
+LAN_TOKEN_PREFIX = "ugl_"
+_LAN_TOKEN_TTL_S = 8 * 3600
+_LAN_NONCE_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
+
+
+def _direct_lan(request: Request) -> bool:
+    """True for a request that reached LAN_ORIGIN directly (not via Cloudflare)."""
+    lan_host = (urlparse((settings.lan_origin or "").strip()).hostname or "").lower()
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    relayed = any(h in request.headers for h in ("cf-ray", "cf-connecting-ip", "cdn-loop"))
+    return bool(lan_host) and host == lan_host and not relayed
+
+
+def _lan_proof(nonce: str) -> str:
+    return hmac.new(settings.session_secret.encode(), b"lan-proof\0" + nonce.encode(), hashlib.sha256).hexdigest()
+
+
+def _lan_token_ser() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(settings.session_secret, salt="lan-token")
+
+
+def _lan_token_user(request: Request, token: str) -> dict[str, Any] | None:
+    if not _direct_lan(request):
+        return None
+    try:
+        data = _lan_token_ser().loads(token[len(LAN_TOKEN_PREFIX):], max_age=_LAN_TOKEN_TTL_S)
+    except (BadSignature, SignatureExpired):
+        return None
+    user = cli_tokens.lookup_id(str(data.get("t") or ""))
+    if user is None or user["uid"] != data.get("u"):
+        return None
+    return {**user, "lan_token": True}
+
+
+@app.get("/api/lan/proof")
+def api_lan_proof(request: Request, nonce: str = Query("", max_length=128)) -> dict[str, str]:
+    if not _direct_lan(request):
+        raise HTTPException(status_code=404)
+    if not _LAN_NONCE_RE.fullmatch(nonce):
+        raise HTTPException(status_code=400, detail="Bad nonce")
+    return {"proof": _lan_proof(nonce)}
+
+
+@app.post("/api/cli/lan-token")
+def api_cli_lan_token(request: Request, nonce: str = Form("", max_length=128),
+                      proof: str = Form("", max_length=128)) -> dict[str, Any]:
+    user = _require_user(request)
+    lan = (settings.lan_origin or "").strip().rstrip("/")
+    if not lan:
+        raise HTTPException(status_code=404, detail="No LAN route on this Drive")
+    if "cli_token_id" not in user or user.get("lan_token"):
+        raise HTTPException(status_code=403, detail="Only an app sign-in can get a LAN token")
+    if not _LAN_NONCE_RE.fullmatch(nonce) or not hmac.compare_digest(proof, _lan_proof(nonce)):
+        raise HTTPException(status_code=403, detail="That LAN host isn't this Drive")
+    token = LAN_TOKEN_PREFIX + _lan_token_ser().dumps({"t": user["cli_token_id"], "u": user["uid"]})
+    return {"token": token, "lan_origin": lan, "expires_in": _LAN_TOKEN_TTL_S}
+
+
+def _bearer_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization") or ""
+    if auth[:7].lower() != "bearer ":
+        return None
+    return auth[7:].strip()
+
+
 def _require_session_user(request: Request) -> dict[str, Any]:
+    """Browser cookie session only, for actions an app token must never perform."""
     user = request.session.get("user")
     if not user or "uid" not in user or not _regular_uid(user):
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -247,8 +329,26 @@ def _link_still_valid(user: dict[str, Any]) -> bool:
 
 
 def _require_user(request: Request) -> dict[str, Any]:
-    """Every route signs in with the browser session (there is no token API)."""
-    return _require_session_user(request)
+    """Cookie session, or `Authorization: Bearer ugd_…` from the Mac app / `ugd`.
+
+    A bearer is never combined with the cookie: a bad token is a 401 even when
+    the browser session is valid.
+    """
+    token = _bearer_token(request)
+    if token is None:
+        return _require_session_user(request)
+    if token.startswith(LAN_TOKEN_PREFIX):
+        user = _lan_token_user(request, token)
+        if user is None:
+            raise HTTPException(status_code=401, detail="LAN sign-in expired")
+    else:
+        user = cli_tokens.lookup(token)
+        if user is None:
+            raise HTTPException(status_code=401, detail="App sign-in expired or revoked. Sign in again.")
+    if user.get("email") and not _link_still_valid(user):
+        # Approved from a Google / email session whose link the admin removed.
+        raise HTTPException(status_code=401, detail="App sign-in expired or revoked. Sign in again.")
+    return user
 
 
 def _require_admin(request: Request) -> dict[str, Any]:
@@ -273,10 +373,11 @@ def _active_share(request: Request, user: dict[str, Any]) -> str:
     /api/me should omit the share header so a stale client default does not
     wipe a previously chosen share on reload.
     """
+    via_app = "cli_token_id" in user
     requested = (
         request.query_params.get("share")
         or request.headers.get("X-Drive-Share")
-        or request.session.get("share")
+        or (None if via_app else request.session.get("share"))
     )
     try:
         share = normalize_share_for_user(
@@ -287,7 +388,9 @@ def _active_share(request: Request, user: dict[str, Any]) -> str:
         )
     except FSError as e:
         raise _fs_http(e) from None
-    request.session["share"] = share
+    if not via_app:
+        # App requests carry the share per call; never mint a cookie for them.
+        request.session["share"] = share
     return share
 
 
@@ -473,6 +576,29 @@ async def api_set_share(request: Request) -> dict[str, Any]:
 _PERSONAL_OTP_TTL_S = 300
 
 
+def _personal_otp_cipher() -> Fernet:
+    key = hashlib.sha256(b"personal-otp-pending\0" + settings.session_secret.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def _dump_personal_otp(owner: str, token_id: str, user: dict[str, Any]) -> str:
+    """Pending OTP step for a bearer client (no cookie session): encrypted so the
+    UGOS challenge stays private, and bound to this owner and app sign-in."""
+    data = {"owner": owner, "token_id": token_id, "cli": user["cli_token_id"],
+            "expires": time.time() + _PERSONAL_OTP_TTL_S}
+    return _personal_otp_cipher().encrypt(json.dumps(data).encode()).decode()
+
+
+def _load_personal_otp(pending: str, owner: str, user: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        data = json.loads(_personal_otp_cipher().decrypt(pending.encode(), ttl=_PERSONAL_OTP_TTL_S))
+    except (InvalidToken, ValueError, TypeError):
+        return None
+    if data.get("owner") != owner or data.get("cli") != user.get("cli_token_id"):
+        return None
+    return data
+
+
 @app.exception_handler(RequestValidationError)
 async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     """Like FastAPI's 422, minus the submitted values: a too-long password or
@@ -520,8 +646,9 @@ def api_unlock_personal(request: Request, owner: str = Form(...), key: str = For
 @app.post("/api/personal/auth")
 def api_personal_auth(request: Request, owner: str = Form(...),
                       password: str = Form("", max_length=256), code: str = Form("", max_length=12),
-                      ) -> dict[str, Any]:
+                      pending: str = Form("", max_length=4096)) -> dict[str, Any]:
     user = _require_user(request)
+    via_app = "cli_token_id" in user
     username = str(user.get("username") or "")
     if owner != username:
         raise HTTPException(status_code=403, detail="Sign in as the personal-folder owner")
@@ -532,21 +659,28 @@ def api_personal_auth(request: Request, owner: str = Form(...),
         raise HTTPException(status_code=400, detail="Enter your NAS account password.")
     if not _nas_login_allowed(f"personal-auth:{user['uid']}"):
         raise HTTPException(status_code=429, detail="Too many sign-in attempts. Try again in a few minutes.")
+    # Bearer clients get 410 when they must start over with the password.
+    start_over = 410 if via_app else 401
     if code:
-        step = request.session.get("personal_otp") or {}
+        if via_app:
+            step = _load_personal_otp(pending, owner, user) or {}
+        else:
+            step = request.session.get("personal_otp") or {}
         expires = float(step.get("expires", 0))
         if step.get("owner") != owner or expires < time.time():
-            raise HTTPException(status_code=401, detail="Sign-in expired. Enter your NAS password again.")
+            raise HTTPException(status_code=start_over, detail="Sign-in expired. Enter your NAS password again.")
         # At most 5 codes per challenge, and a challenge that worked is used up.
         attempt_key = f"personal\0{owner}\0{step['token_id']}"
         if not _nas_otp_take_attempt(attempt_key, expires):
-            request.session.pop("personal_otp", None)
-            raise HTTPException(status_code=401, detail="This sign-in can't take more codes. Enter your NAS password again.")
+            if not via_app:
+                request.session.pop("personal_otp", None)
+            raise HTTPException(status_code=start_over, detail="This sign-in can't take more codes. Enter your NAS password again.")
         result = nas_otp_login(settings.ugos_api_url, code=code, token_id=step["token_id"], return_session=True)
         if result.get("ok"):
             _nas_otp_attempts[attempt_key] = (_NAS_OTP_MAX_ATTEMPTS, expires)
     else:
-        request.session.pop("personal_otp", None)
+        if not via_app:
+            request.session.pop("personal_otp", None)
         if _nas_user_locked(owner):
             raise HTTPException(status_code=429, detail="Too many failed sign-ins for this account. Try again in 15 minutes.")
         result = nas_password_login(settings.ugos_api_url, owner, password, return_session=True)
@@ -557,11 +691,14 @@ def api_personal_auth(request: Request, owner: str = Form(...),
     if not result.get("ok"):
         raise HTTPException(status_code=401, detail=result.get("error", "NAS sign-in failed"))
     if result.get("need_otp"):
+        if via_app:
+            return {"need_otp": True, "pending": _dump_personal_otp(owner, result["token_id"], user)}
         request.session["personal_otp"] = {"owner": owner, "token_id": result["token_id"],
                                            "expires": time.time() + _PERSONAL_OTP_TTL_S}
         return {"need_otp": True}
     personal_folders.save_owner_session(owner, result["session"])
-    request.session.pop("personal_otp", None)
+    if not via_app:
+        request.session.pop("personal_otp", None)
     return {"ok": True}
 
 
@@ -1876,6 +2013,166 @@ def open_link(
         site=settings.drive_name,
     )
     return HTMLResponse(page)
+
+
+# ---------------------------------------------------------------------------
+# Sign-in for the Mac app and `ugd` (PKCE via a 127.0.0.1 callback)
+# ---------------------------------------------------------------------------
+_CLI_STATE_RE = re.compile(r"[A-Za-z0-9_-]{16,128}")
+_CLI_PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
+        # The consent form posts to us, and we 303 it to the app's loopback listener.
+        "form-action 'self' http://127.0.0.1:*; base-uri 'none'; frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    # The URL carries state/challenge: never send it cross-origin (the loopback
+    # page is another origin). Not "no-referrer": that makes form POSTs send
+    # `Origin: null`, which check_origin rightly rejects.
+    "Referrer-Policy": "same-origin",
+}
+
+
+def _cli_request_params(port: Any, state: Any, challenge: Any) -> tuple[int, str, str]:
+    try:
+        port_n = int(port)
+    except (TypeError, ValueError):
+        port_n = 0
+    if not 1024 <= port_n <= 65535:
+        raise HTTPException(status_code=400, detail="Invalid callback port")
+    if not _CLI_STATE_RE.fullmatch(str(state or "")):
+        raise HTTPException(status_code=400, detail="Invalid state")
+    if not cli_tokens.valid_challenge(str(challenge or "")):
+        raise HTTPException(status_code=400, detail="Invalid PKCE challenge")
+    return port_n, str(state), str(challenge)
+
+
+def cli_confirmation_code(state: str) -> str:
+    """The code the app shows: first 8 hex digits of SHA-256("ugd-verify:" + state)."""
+    digest = hashlib.sha256(f"ugd-verify:{state}".encode()).hexdigest()[:8].upper()
+    return f"{digest[:4]}-{digest[4:]}"
+
+
+@app.get("/cli/authorize")
+def cli_authorize_page() -> HTMLResponse:
+    # Static page; it validates via /api/me and POST /api/cli/authorize.
+    page = _with_drive_name((STATIC / "cli-authorize.html").read_text(encoding="utf-8"))
+    return HTMLResponse(page, headers=_CLI_PAGE_HEADERS)
+
+
+@app.get("/api/cli/confirm-code")
+def api_cli_confirm_code(state: str = Query("", max_length=128)) -> dict[str, str]:
+    """Computed here, not in the page: crypto.subtle needs HTTPS, and LAN addresses are HTTP."""
+    if not _CLI_STATE_RE.fullmatch(state):
+        raise HTTPException(status_code=400, detail="Invalid state")
+    return {"code": cli_confirmation_code(state)}
+
+
+@app.post("/api/cli/authorize")
+def api_cli_authorize(
+    request: Request,
+    port: str = Form(""),
+    state: str = Form(""),
+    challenge: str = Form(""),
+    device: str = Form("", max_length=512),
+    allow: str = Form(""),
+) -> RedirectResponse:
+    """Browser approves the app via a plain form POST.
+
+    The one-time code only ever travels in this 303's Location header, which
+    page script (even an XSS on the Drive origin) cannot read.
+    """
+    origin = request.headers.get("origin")
+    if origin is None or not _origin_allowed(request, origin):
+        raise HTTPException(status_code=403, detail="Approve from the drive's own page")
+    user = _require_session_user(request)
+    port_n, state, challenge = _cli_request_params(port, state, challenge)
+    callback = f"http://127.0.0.1:{port_n}/callback"
+    if allow != "1":
+        return RedirectResponse(f"{callback}?{urlencode({'error': 'access_denied', 'state': state})}", status_code=303)
+    # Only a linked-email sign-in records its email: _require_user re-checks that link.
+    email = str(user.get("email") or "") if user.get("via") in ("google", "email") else ""
+    try:
+        code = cli_tokens.issue_code(str(user["username"]), email, device, challenge)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    return RedirectResponse(f"{callback}?{urlencode({'code': code, 'state': state})}", status_code=303)
+
+
+# Codes are 256-bit and PKCE-bound, so this is abuse control, not brute-force
+# defence: count failures only.
+_CLI_TOKEN_WINDOW_S = 300.0
+_CLI_TOKEN_MAX_FAILURES = 30
+_cli_token_failures: dict[str, list[float]] = {}
+
+
+def _cli_token_blocked(ip: str) -> bool:
+    now = time.time()
+    recent = [t for t in _cli_token_failures.get(ip, []) if now - t < _CLI_TOKEN_WINDOW_S]
+    if recent:
+        _cli_token_failures[ip] = recent
+    else:
+        _cli_token_failures.pop(ip, None)
+    return len(recent) >= _CLI_TOKEN_MAX_FAILURES
+
+
+@app.post("/api/cli/token")
+async def api_cli_token(request: Request) -> dict[str, Any]:
+    ip = request.client.host if request.client else "unknown"
+    if _cli_token_blocked(ip):
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again in a few minutes.")
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Invalid request")
+    issued = cli_tokens.redeem_code(str(body.get("code") or ""), str(body.get("verifier") or ""))
+    if issued is None:
+        _cli_token_failures.setdefault(ip, []).append(time.time())
+        raise HTTPException(status_code=401, detail="Sign-in code is invalid or expired. Sign in again.")
+    return {
+        "token": issued["token"],
+        "id": issued["id"],
+        "username": issued["username"],
+        "device": issued["device"],
+        "idle_expiry_days": cli_tokens.IDLE_TTL_S // 86400,
+    }
+
+
+@app.get("/api/cli/sessions")
+def api_cli_sessions(request: Request) -> dict[str, Any]:
+    user = _require_user(request)
+    current = user.get("cli_token_id")
+    rows = cli_tokens.list_for(str(user["username"]))
+    return {"sessions": [{**row, "current": row["id"] == current} for row in rows]}
+
+
+@app.delete("/api/cli/sessions/{token_id}")
+def api_cli_revoke(request: Request, token_id: str) -> dict[str, bool]:
+    user = _require_user(request)
+    if not cli_tokens.revoke(token_id, str(user["username"])):
+        raise HTTPException(status_code=404, detail="App sign-in not found")
+    return {"ok": True}
+
+
+@app.post("/api/cli/logout")
+def api_cli_logout(request: Request) -> dict[str, bool]:
+    token = _bearer_token(request)
+    if not token or not cli_tokens.revoke_token(token):
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return {"ok": True}
+
+
+@app.get("/mac/install.sh")
+def mac_install_script(request: Request) -> Response:
+    """Installer for the Mac app, with this Drive's address filled in."""
+    server = settings.public_base_url.rstrip("/")
+    if not re.fullmatch(r"https?://[A-Za-z0-9.-]+(:[0-9]+)?", server):
+        raise HTTPException(status_code=503, detail="Set the Drive's public address in Settings first")
+    script = (STATIC / "mac" / "install.sh").read_text(encoding="utf-8")
+    return Response(script.replace("__UGD_SERVER__", server), media_type="text/x-shellscript")
 
 
 @app.get("/{full_path:path}")
