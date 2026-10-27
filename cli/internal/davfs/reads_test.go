@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -235,9 +236,23 @@ func TestUnknownTypeFetchesOnlyTheRange(t *testing.T) {
 // read must not start fetching megabytes ahead it will never use.
 func TestPeekingAtABigFileFetchesLittle(t *testing.T) {
 	d, _, dav := newRevDrive(t, "clip.bin", make([]byte, 64<<20)) // not a video: no index prefetch
-	req, _ := http.NewRequest("GET", dav.URL+"/V/S/clip.bin", nil)
+	// Small socket buffers on both ends: loopback autotuning (several MB on
+	// Linux) would otherwise soak up read-ahead the reader never asked for.
+	small := httptest.NewUnstartedServer(dav.Config.Handler)
+	small.Listener = smallBufListener{small.Listener}
+	small.Start()
+	t.Cleanup(small.Close)
+	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.SetReadBuffer(64 << 10)
+		}
+		return conn, err
+	}}}
+	t.Cleanup(client.CloseIdleConnections)
+	req, _ := http.NewRequest("GET", small.URL+"/V/S/clip.bin", nil)
 	req.SetBasicAuth(User, "pw")
-	res, err := dav.Client().Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,4 +372,15 @@ func TestOpeningAVideoPrefetchesItsIndex(t *testing.T) {
 	if n := d.requests() - before; n != 0 {
 		t.Fatalf("the index wasn't prefetched: %d more Drive requests", n)
 	}
+}
+
+// smallBufListener gives accepted connections a 64 KiB send buffer.
+type smallBufListener struct{ net.Listener }
+
+func (l smallBufListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if tc, ok := conn.(*net.TCPConn); ok {
+		tc.SetWriteBuffer(64 << 10)
+	}
+	return conn, err
 }
