@@ -6,11 +6,11 @@
 
 | Process | Listens on | Job |
 |---|---|---|
-| nginx | `0.0.0.0:$WEB_PORT` (8790) | The only public port. Streams uploads and downloads without buffering, gzips JSON, caches `/assets/`. |
-| uvicorn main app | `127.0.0.1:8787` | Everything: pages, API, sign-in, background jobs. |
-| uvicorn upload workers | `127.0.0.1:8793-8795` | Only chunk bodies (`/api/upload/chunk`, `/api/speedtest/upload`). One Python process tops out near one CPU core; nginx spreads chunks over these with the main app as fallback. |
+| nginx | `0.0.0.0:$WEB_PORT` (8790) | The only network port. Streams uploads and downloads without buffering, gzips JSON, caches `/assets/`. No access log (query strings carry tokens). |
+| uvicorn main app | `/run/ugreen-drive/app.sock` | Everything: pages, API, sign-in, background jobs. |
+| uvicorn upload workers | `/run/ugreen-drive/upload-{0,1,2}.sock` | Only chunk bodies (`/api/upload/chunk`, `/api/speedtest/upload`). One Python process tops out near one CPU core; nginx spreads chunks over these with the main app as fallback. |
 
-`scripts/entrypoint.sh` starts all of them and runs a watchdog that exits (so Docker restarts the container) if `/api/health` stops answering, and restarts a dead worker or nginx.
+The sockets are inside the container (group `www-data`, mode 0770), so other host-network containers can't take or reach the app's port. nginx sets `X-Forwarded-For` and `X-Forwarded-Proto` itself and only passes Cloudflare's client IP and `https` through when the connection comes from cloudflared on 127.0.0.1, so the app can trust those headers. `scripts/entrypoint.sh` starts all of them and runs a watchdog that exits (so Docker restarts the container) if `/api/health` stops answering, and restarts a dead worker or nginx.
 
 Host network is needed so the app can reach the UGOS API on `127.0.0.1:9999`, and so the LAN address `http://<NAS-IP>:8790` works without port mapping.
 
@@ -28,7 +28,8 @@ Host network is needed so the app can reach the UGOS API on `127.0.0.1:9999`, an
 
 - **NAS password** (`POST /auth/nas`, always on): the UGOS API checks the password, and starts a 2FA challenge if the account has one (`POST /auth/nas/otp`). Rate limits per IP, a 15-minute lockout after 5 failures per username, and 5 codes per challenge.
 - **Google** (`/auth/login` → `/auth/callback`) and **email codes** (`/auth/email/*`, Resend): on when configured in Settings. The email must be linked to a NAS user in Settings → People (`users.resolve_nas_user`). There is no domain-wide or name-matching fallback.
-- Sessions are signed cookies (5 days). Every session holds a NAS username, uid and gid; uid must be at least 1000.
+- Sessions are signed cookies (5 days). Every session holds a NAS username, uid and gid; uid must be at least 1000. Google and email sessions also record how they signed in, and are checked against Settings → People on every request, so unlinking an email signs it out at once.
+- UGOS replies only count when they say `code: 200` and return a session token; anything else is a failed sign-in or 2FA code.
 - **LAN hand-off:** Google always returns to the public address. If sign-in started on the LAN address, the callback mints a 90-second signed token and redirects to `/auth/lan-handoff` on the LAN origin, which sets the cookie there.
 
 ## Settings

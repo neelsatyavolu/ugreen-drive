@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from config import get_settings
-from fsops import FSError, as_user, host_group_names, _encrypted_home_mount
+from fsops import FSError, as_user, host_group_names, _encrypted_home_mount, _host_group_rows
+from users import _pwd_user
 import personal_folders
 
 
@@ -49,9 +50,23 @@ _samba_cache: dict[str, Any] = {"mtime": None, "shares": {}, "home_template": No
 
 
 def is_nas_admin(username: str) -> bool:
-    """True if the NAS Linux user is in the system `admin` group (UGOS administrators)."""
+    """True if the NAS Linux user is in the system `admin` group (UGOS administrators).
+
+    Reads the host group file fresh (the container's /etc/group file bind goes
+    stale when UGOS rewrites it), so a demoted admin loses Settings right away.
+    """
     if not username:
         return False
+    rows = _host_group_rows()
+    if rows:
+        admin_row = next((r for r in rows if r[0] == "admin"), None)
+        if admin_row is None:
+            return False
+        _name, admin_gid, members = admin_row
+        if username in members:
+            return True
+        pw = _pwd_user(username)
+        return pw is not None and pw.pw_gid == admin_gid
     try:
         admin = grp.getgrnam("admin")
     except KeyError:

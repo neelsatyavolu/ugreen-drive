@@ -36,7 +36,7 @@ def test_gateway_sends_upload_bodies_to_worker_pool():
     conf = (ROOT / "docker" / "nginx.conf.template").read_text()
     pool = re.search(r"upstream ugd_upload \{(.*?)\}", conf, re.S)
     assert pool, "missing ugd_upload upstream"
-    assert re.search(r"server 127\.0\.0\.1:8787 backup;", pool.group(1)), "main app must stay the fallback"
+    assert re.search(r"server unix:/run/ugreen-drive/app\.sock backup;", pool.group(1)), "main app must stay the fallback"
     location = re.search(r"location ~ \^/api/\(([^)]*upload/chunk[^)]*)\)\$ \{(.*?)\n    \}", conf, re.S)
     assert location and "proxy_pass http://ugd_upload;" in location.group(2)
     for route in UPLOAD_BODY_ROUTES:

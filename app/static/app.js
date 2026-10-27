@@ -2,9 +2,9 @@
  * ugreen-drive — file browser front end.
  * Talks to the FastAPI backend in api.js and renders the Machine & Ink UI.
  */
-import { bindEmailSignIn } from "./email-sign-in.js?v=20261026-ugd1";
-import * as api from "./api.js?v=20261026-ugd1";
-import { ApiError } from "./api.js?v=20261026-ugd1";
+import { bindEmailSignIn } from "./email-sign-in.js?v=20261026-ugd2";
+import * as api from "./api.js?v=20261026-ugd2";
+import { ApiError } from "./api.js?v=20261026-ugd2";
 import {
   describeKind,
   displayName,
@@ -20,9 +20,9 @@ import {
   isUnderRecycle,
   pathParts,
   previewKind,
-} from "./format.js?v=20261026-ugd1";
-import { $, el, icon, show } from "./dom.js?v=20261026-ugd1";
-import { openSettingsModal } from "./settings.js?v=20261026-ugd1";
+} from "./format.js?v=20261026-ugd2";
+import { $, el, icon, show } from "./dom.js?v=20261026-ugd2";
+import { openSettingsModal } from "./settings.js?v=20261026-ugd2";
 import {
   setQuickScope,
   listFavorites,
@@ -31,7 +31,7 @@ import {
   listRecents,
   pushRecent,
   removePath,
-} from "./quick.js?v=20261026-ugd1";
+} from "./quick.js?v=20261026-ugd2";
 
 const THEME_KEY = "ifd-theme";
 const VIEW_KEY = "ifd-view";
@@ -2409,7 +2409,7 @@ function openPreview(item) {
     downloadItems([item]);
     return;
   }
-  import("./viewer.js?v=20261026-ugd1").then(({ openPreview: openViewer }) => {
+  import("./viewer.js?v=20261026-ugd2").then(({ openPreview: openViewer }) => {
     openViewer(item, {
       siblings: visibleItems().filter((entry) => previewKind(entry)),
       downloadUrl: api.downloadUrl,

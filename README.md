@@ -56,7 +56,7 @@ Everything can be set in the web UI, but env values work as defaults: `PUBLIC_BA
 ## How it works
 
 ```
-browser ──► (Cloudflare Tunnel) ──► nginx :8790 ──► FastAPI 127.0.0.1:8787 ──► /volumeN (as the signed-in NAS user)
+browser ──► (Cloudflare Tunnel) ──► nginx :8790 ──► FastAPI (unix socket) ──► /volumeN (as the signed-in NAS user)
                                          │                  │
                                          └► upload workers  └► UGOS API 127.0.0.1:9999 (password + 2FA check)
 ```

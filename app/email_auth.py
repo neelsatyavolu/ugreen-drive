@@ -26,7 +26,10 @@ TTL = 600
 def check_origin(request: Request) -> None:
     settings = get_settings()
     origins = {settings.public_base_url.rstrip("/"), settings.lan_origin.rstrip("/")} - {""}
-    if request.headers.get("origin") not in origins:
+    origin = request.headers.get("origin") or ""
+    # Also this exact host (e.g. the tunnel address before Settings has it).
+    same_host = origin.split("://", 1)[-1].lower() == (request.headers.get("host") or "").lower()
+    if origin not in origins and not (origin.startswith(("http://", "https://")) and same_host):
         raise HTTPException(403, f"Sign in from the {settings.drive_name} page.")
 
 
@@ -162,7 +165,7 @@ def verify_code(body: CodeInput, request: Request, response: Response):
     request.session.clear()
     request.session["user"] = {
         "email": body.email, "name": nas.username, "picture": None,
-        "username": nas.username, "uid": nas.uid, "gid": nas.gid,
+        "username": nas.username, "uid": nas.uid, "gid": nas.gid, "via": "email",
     }
     request.session["share"] = DEFAULT_SHARE
     response.delete_cookie(COOKIE, path="/auth/email", httponly=True, samesite="strict",

@@ -1,25 +1,41 @@
 # nginx in front of the app (same container, host network). The entrypoint
-# fills in __WEB_PORT__. Upload bodies go to extra worker processes, because one
-# Python process tops out near one CPU core; the main app is the fallback.
+# fills in __WEB_PORT__. The app listens on unix sockets, so nothing else on the
+# NAS's host network can take its port. Upload bodies go to extra worker
+# processes, because one Python process tops out near one CPU core; the main
+# app is the fallback.
 
-# Cloudflare Tunnel sends X-Forwarded-Proto: https; direct LAN visits are plain http.
-map $http_x_forwarded_proto $fwd_proto {
-    default $http_x_forwarded_proto;
-    "" $scheme;
+# Only cloudflared (connecting from 127.0.0.1) may say the visit was https or
+# name the real client. Everyone else gets their own address and scheme. The app
+# trusts these headers because only nginx can reach its sockets.
+map "$remote_addr|$http_x_forwarded_proto" $fwd_proto {
+    "~^127\.0\.0\.1\|https$" https;
+    default $scheme;
+}
+map "$remote_addr|$http_cf_connecting_ip" $client_ip {
+    "~^127\.0\.0\.1\|(?<cf>[0-9A-Fa-f:.]+)$" $cf;
+    default $remote_addr;
+}
+
+upstream ugd_app {
+    server unix:/run/ugreen-drive/app.sock;
+    keepalive 32;
 }
 
 upstream ugd_upload {
     least_conn;
-    server 127.0.0.1:8793;
-    server 127.0.0.1:8794;
-    server 127.0.0.1:8795;
-    server 127.0.0.1:8787 backup;
+    server unix:/run/ugreen-drive/upload-0.sock;
+    server unix:/run/ugreen-drive/upload-1.sock;
+    server unix:/run/ugreen-drive/upload-2.sock;
+    server unix:/run/ugreen-drive/app.sock backup;
     keepalive 32;
 }
 
 server {
     listen __WEB_PORT__;
     server_name _;
+
+    # Query strings carry share-link and hand-off tokens; don't keep them on disk.
+    access_log off;
 
     client_max_body_size 50g;
     client_body_timeout 3600s;
@@ -36,11 +52,11 @@ server {
 
     # Versioned static files (?v= on JS/CSS/PNG): safe to cache hard.
     location /assets/ {
-        proxy_pass http://127.0.0.1:8787;
+        proxy_pass http://ugd_app;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $client_ip;
+        proxy_set_header X-Forwarded-For $client_ip;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
         proxy_set_header Connection "";
         proxy_buffering on;
@@ -53,11 +69,11 @@ server {
     }
 
     location /api/thumbnail {
-        proxy_pass http://127.0.0.1:8787;
+        proxy_pass http://ugd_app;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $client_ip;
+        proxy_set_header X-Forwarded-For $client_ip;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
         proxy_set_header Connection "";
         proxy_buffering on;
@@ -68,11 +84,11 @@ server {
 
     # Small JSON responses: buffered and gzipped.
     location ~ ^/api/(files|search|folder-sizes|me|usage|config)$ {
-        proxy_pass http://127.0.0.1:8787;
+        proxy_pass http://ugd_app;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $client_ip;
+        proxy_set_header X-Forwarded-For $client_ip;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
         proxy_set_header Connection "";
         proxy_buffering on;
@@ -87,9 +103,9 @@ server {
     location ~ ^/api/(upload/chunk|speedtest/upload)$ {
         proxy_pass http://ugd_upload;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $client_ip;
+        proxy_set_header X-Forwarded-For $client_ip;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
         proxy_set_header Connection "";
         proxy_request_buffering off;
@@ -104,11 +120,11 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://127.0.0.1:8787;
+        proxy_pass http://ugd_app;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $client_ip;
+        proxy_set_header X-Forwarded-For $client_ip;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
         proxy_set_header Connection "";
         proxy_request_buffering off;
@@ -123,11 +139,11 @@ server {
     }
 
     location /auth/ {
-        proxy_pass http://127.0.0.1:8787;
+        proxy_pass http://ugd_app;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $client_ip;
+        proxy_set_header X-Forwarded-For $client_ip;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
         proxy_set_header Connection "";
         proxy_hide_header Cache-Control;
@@ -136,11 +152,11 @@ server {
     }
 
     location / {
-        proxy_pass http://127.0.0.1:8787;
+        proxy_pass http://ugd_app;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $client_ip;
+        proxy_set_header X-Forwarded-For $client_ip;
         proxy_set_header X-Forwarded-Proto $fwd_proto;
         proxy_set_header Connection "";
         proxy_request_buffering off;

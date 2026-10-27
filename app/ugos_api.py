@@ -149,7 +149,7 @@ def nas_password_login(base_url: str, username: str, password: str, *, return_se
     except (httpx.HTTPError, ValueError, UgosError) as e:
         log.warning("NAS password login failed: %s", type(e).__name__)
         return {"ok": False, "error": "Invalid username or password"}
-    if parsed.get("code") not in (200, None):
+    if parsed.get("code") != 200:
         log.warning("NAS UGOS login code=%s msg=%s", parsed.get("code"), parsed.get("msg"))
         return {
             "ok": False,
@@ -197,22 +197,21 @@ def nas_otp_login(base_url: str, *, code: str, token_id: str, otp_type: int = 1,
     except (httpx.HTTPError, ValueError, UgosError) as e:
         log.warning("NAS OTP login failed: %s", type(e).__name__)
         return {"ok": False, "error": "Invalid or expired authentication code"}
-    if parsed.get("code") not in (200, None):
+    # Fail closed: only an explicit success with a session token counts.
+    if parsed.get("code") != 200:
         return {"ok": False, "error": "Invalid or expired authentication code"}
     data = parsed.get("data") if isinstance(parsed.get("data"), dict) else {}
+    token = data.get("token") or data.get("static_token")
+    if not token:
+        return {"ok": False, "error": "Invalid or expired authentication code"}
     if return_session or return_login_data:
-        token = data.get("token") or data.get("static_token")
-        if not token:
-            return {"ok": False, "error": "NAS sign-in did not return a session"}
         result = {"ok": True}
         if return_session:
             result["session"] = {"token": token, "public_key": decode_en_public_key(str(data.get("public_key") or ""))}
         if return_login_data:
             result["login_data"] = data
         return result
-    if data.get("token") or data.get("static_token") or parsed.get("code") in (200, None):
-        return {"ok": True}
-    return {"ok": False, "error": "Invalid or expired authentication code"}
+    return {"ok": True}
 
 
 def nas_send_otp_email(base_url: str, username: str) -> bool:

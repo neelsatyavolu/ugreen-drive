@@ -155,6 +155,9 @@ def apply(s: Settings | None = None) -> Settings:
         s.lan_origin = f"http://{ip}:{s.web_port}" if ip else ""
     if not s.public_base_url.strip():
         s.public_base_url = s.lan_origin or f"http://localhost:{s.web_port}"
+    if "ugos_admin_path" not in _env_defaults:
+        _env_defaults["ugos_admin_path"] = s.ugos_admin_path
+    s.ugos_admin_path = _env_defaults["ugos_admin_path"]
     if not s.ugos_admin_path.strip() and s.lan_origin:
         host = urlparse(s.lan_origin).hostname
         s.ugos_admin_path = f"http://{host}:9999/" if host else ""

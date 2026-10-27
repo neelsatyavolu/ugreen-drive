@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 from html import escape as html_escape
 import mimetypes
 import os
@@ -16,10 +12,8 @@ from typing import Any, AsyncIterator
 from urllib.parse import quote, urlencode, urlparse
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -31,15 +25,13 @@ from chunk_upload import (
     abort_session,
     complete_session,
     create_session,
-    peek_session,
-    session_rel_path,
     status as chunk_upload_status,
     write_chunk,
 )
 from config import get_settings, require_strong_session_secret
 import personal_folders
 import runtime_settings
-from email_auth import check_origin, router as email_auth_router
+from email_auth import router as email_auth_router
 from file_links import (
     DEFAULT_DAYS,
     MAX_DAYS,
@@ -227,9 +219,13 @@ def _public_config(request: Request | None = None) -> dict[str, Any]:
 def _safe_next_url(raw: str | None) -> str:
     """Only allow same-site relative redirects (path or hash)."""
     next_url = (raw or "").strip() or "/"
+    # Browsers read "/\\x", "/\tx" and friends as "//x" (another site).
+    if "\\" in next_url or any(ord(c) < 0x20 or ord(c) == 0x7F for c in next_url):
+        return "/"
     if next_url.startswith("#"):
         return f"/{next_url}"
-    if next_url.startswith("/") and not next_url.startswith("//"):
+    parsed = urlparse(next_url)
+    if next_url.startswith("/") and not next_url.startswith("//") and not parsed.scheme and not parsed.netloc:
         return next_url
     return "/"
 
@@ -238,7 +234,16 @@ def _require_session_user(request: Request) -> dict[str, Any]:
     user = request.session.get("user")
     if not user or "uid" not in user or not _regular_uid(user):
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if user.get("via") in ("google", "email") and not _link_still_valid(user):
+        # The admin unlinked (or relinked) this email: end the session now.
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return user
+
+
+def _link_still_valid(user: dict[str, Any]) -> bool:
+    nas = resolve_nas_user(str(user.get("email") or ""))
+    return nas is not None and nas.username == user.get("username") and nas.uid == user.get("uid")
 
 
 def _require_user(request: Request) -> dict[str, Any]:
@@ -319,6 +324,7 @@ def api_lan_handoff(request: Request) -> dict[str, Any]:
         "username": user.get("username"),
         "uid": user.get("uid"),
         "gid": user.get("gid"),
+        "via": user.get("via"),
         "share": request.session.get("share") or DEFAULT_SHARE,
         "nonce": secrets.token_urlsafe(8),
     }
@@ -360,6 +366,7 @@ def auth_lan_handoff(
         "username": username,
         "uid": uid,
         "gid": gid,
+        "via": payload.get("via"),
     }
     share = str(payload.get("share") or DEFAULT_SHARE)
     request.session["share"] = share
@@ -568,8 +575,11 @@ def auth_login(request: Request) -> RedirectResponse:
     # Signed state (not session-only): Google always returns to PUBLIC_BASE_URL, but
     # LAN prefer may start login on the LAN origin — a different cookie jar.
     cfg = _public_config(request)
-    return_lan = bool(cfg.get("via_lan")) or request.query_params.get("return_lan") == "1"
-    if cfg.get("via_lan"):
+    public_host = (urlparse(settings.public_base_url).hostname or "").lower()
+    here = (request.headers.get("host") or "").split(":")[0].lower()
+    on_public = bool(public_host) and here == public_host
+    return_lan = (bool(cfg.get("via_lan")) and not on_public) or request.query_params.get("return_lan") == "1"
+    if cfg.get("via_lan") and not on_public:
         # Establish the OAuth browser cookie on the same public origin that
         # receives Google's callback, including sign-ins begun on the LAN.
         return RedirectResponse(settings.public_base_url.rstrip("/") + "/auth/login?" + urlencode({
@@ -824,6 +834,7 @@ async def auth_callback(request: Request, code: str | None = None, state: str | 
         "uid": nas.uid,
         "gid": nas.gid,
     }
+    user["via"] = "google"
     if browser_verified and info.get("sub"):
         user.update(auth_provider="google", google_sub=str(info["sub"]))
     request.session["user"] = user
@@ -839,6 +850,7 @@ async def auth_callback(request: Request, code: str | None = None, state: str | 
             "username": user["username"],
             "uid": user["uid"],
             "gid": user["gid"],
+            "via": "google",
             "share": DEFAULT_SHARE,
             "nonce": secrets.token_urlsafe(8),
         }

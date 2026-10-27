@@ -2,9 +2,9 @@
  * Admin Settings: drive name and addresses, sign-in methods, linked sign-ins.
  * NAS administrators only (the server checks too). Saved to /config/settings.json.
  */
-import * as api from "./api.js?v=20261026-ugd1";
-import { ApiError } from "./api.js?v=20261026-ugd1";
-import { el, icon } from "./dom.js?v=20261026-ugd1";
+import * as api from "./api.js?v=20261026-ugd2";
+import { ApiError } from "./api.js?v=20261026-ugd2";
+import { el, icon } from "./dom.js?v=20261026-ugd2";
 
 const SECRET_KEYS = ["google_client_secret", "resend_api_key"];
 
@@ -149,7 +149,7 @@ function buildForm(view, shares) {
       el("h5", { class: "settings-sub", text: `Google ${methods.google ? "· on" : "· off"}` }),
       field("Client ID", textInput("google_client_id", v.google_client_id, { placeholder: "…apps.googleusercontent.com" })),
       field("Client secret", secretInput("google_client_secret", v.google_client_secret?.set),
-        `In Google Cloud → APIs & Services → Credentials, create an OAuth web client with this redirect URI: ${eff.google_redirect_uri}`),
+        `Needs an https public address. In Google Cloud → APIs & Services → Credentials, create an OAuth web client with this redirect URI: ${eff.google_redirect_uri}`),
       el("h5", { class: "settings-sub", text: `Email codes ${methods.email ? "· on" : "· off"}` }),
       field("Resend API key", secretInput("resend_api_key", v.resend_api_key?.set), "From resend.com, with a verified sending domain."),
       field("From", textInput("resend_from_email", v.resend_from_email, { placeholder: "Drive <drive@example.com>" })),
