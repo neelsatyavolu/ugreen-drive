@@ -9,4 +9,4 @@ node_modules/
 .playwright-mcp/
 
 # Runtime state on the NAS (settings, generated secret, sign-in databases)
-config/
+/config/
