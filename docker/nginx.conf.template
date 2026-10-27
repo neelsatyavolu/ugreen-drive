@@ -1,0 +1,155 @@
+# nginx in front of the app (same container, host network). The entrypoint
+# fills in __WEB_PORT__. Upload bodies go to extra worker processes, because one
+# Python process tops out near one CPU core; the main app is the fallback.
+
+# Cloudflare Tunnel sends X-Forwarded-Proto: https; direct LAN visits are plain http.
+map $http_x_forwarded_proto $fwd_proto {
+    default $http_x_forwarded_proto;
+    "" $scheme;
+}
+
+upstream ugd_upload {
+    least_conn;
+    server 127.0.0.1:8793;
+    server 127.0.0.1:8794;
+    server 127.0.0.1:8795;
+    server 127.0.0.1:8787 backup;
+    keepalive 32;
+}
+
+server {
+    listen __WEB_PORT__;
+    server_name _;
+
+    client_max_body_size 50g;
+    client_body_timeout 3600s;
+    client_header_timeout 120s;
+    send_timeout 3600s;
+    keepalive_timeout 120s;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_types text/plain text/css text/javascript application/javascript application/json image/svg+xml application/xml;
+
+    # Versioned static files (?v= on JS/CSS/PNG): safe to cache hard.
+    location /assets/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_set_header Connection "";
+        proxy_buffering on;
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header CDN-Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    location /api/thumbnail {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_set_header Connection "";
+        proxy_buffering on;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+
+    # Small JSON responses: buffered and gzipped.
+    location ~ ^/api/(files|search|folder-sizes|me|usage|config)$ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_set_header Connection "";
+        proxy_buffering on;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "private, no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+    }
+
+    location ~ ^/api/(upload/chunk|speedtest/upload)$ {
+        proxy_pass http://ugd_upload;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_set_header Connection "";
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "private, no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_set_header Connection "";
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "private, no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+    }
+
+    location /auth/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_set_header Connection "";
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "private, no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_set_header Connection "";
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "public, max-age=60, must-revalidate" always;
+    }
+}

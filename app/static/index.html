@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" id="meta-color-scheme" />
+  <meta name="theme-color" content="#0E0E0D" id="meta-theme-color" />
+  <title>Drive</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20261026-ugd1" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=20261026-ugd1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="modulepreload" href="/assets/app.js?v=20261026-ugd1" />
+  <link rel="modulepreload" href="/assets/api.js?v=20261026-ugd1" />
+  <link rel="modulepreload" href="/assets/format.js?v=20261026-ugd1" />
+  <link rel="modulepreload" href="/assets/dom.js?v=20261026-ugd1" />
+  <link rel="modulepreload" href="/assets/quick.js?v=20261026-ugd1" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500&amp;display=swap" />
+  <!-- Critical theme paint before app.css — stops reload FOUC (light sidebar / dark main). -->
+  <style id="ugd-theme-critical">
+    html, body { margin: 0; background: #0E0E0D; color: #F2F0EA; color-scheme: dark; }
+    html.light, html.light body { background: #F7F5EF; color: #16161A; color-scheme: light; }
+    /* Sidebar uses --sb-* once CSS loads; pin shell bg so sticky rail never flashes white. */
+    .sidebar { background: #0E0E0D !important; }
+    html.light .sidebar { background: #F7F5EF !important; }
+    /* Boot splash: paints before JS/CSS modules so cold loads aren't a blank black page. */
+    .boot {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; background: #0E0E0D; color: #F2F0EA;
+      font-family: "Geist Mono", ui-monospace, Menlo, monospace;
+      transition: opacity .18s cubic-bezier(0.16, 1, 0.3, 1), visibility .18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .boot[hidden] { display: none !important; }
+    .boot.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
+    html.light .boot { background: #F7F5EF; color: #16161A; }
+    .boot__mark { display: flex; align-items: center; gap: 12px; }
+    .boot__square { width: 14px; height: 14px; background: #4C8DFF; display: block; }
+    .boot__mark span[data-drive-name] {
+      font-weight: 500; letter-spacing: -0.01em; font-size: 21px; line-height: 1; color: inherit; text-transform: uppercase;
+    }
+    .boot__label {
+      font-size: 12px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase;
+      color: rgba(242,240,234,.45);
+    }
+    html.light .boot__label { color: rgba(22,22,26,.45); }
+    .boot__spin {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid rgba(76,141,255,.22);
+      border-top-color: #4C8DFF;
+      animation: ifd-boot-spin .7s linear infinite;
+    }
+    @keyframes ifd-boot-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .boot__spin { animation: none; border-top-color: #4C8DFF; opacity: .7; }
+      .boot { transition: none; }
+    }
+  </style>
+  <link rel="stylesheet" href="/assets/app.css?v=20261026-ugd1" />
+  <script>
+    // Sync theme class + browser color-scheme before first paint (and after bfcache).
+    (function () {
+      function apply(theme) {
+        var root = document.documentElement;
+        var light = theme === "light";
+        root.classList.toggle("light", light);
+        root.dataset.theme = light ? "light" : "dark";
+        root.style.colorScheme = light ? "light" : "dark";
+        var scheme = document.getElementById("meta-color-scheme");
+        var color = document.getElementById("meta-theme-color");
+        if (scheme) scheme.setAttribute("content", light ? "light" : "dark");
+        if (color) color.setAttribute("content", light ? "#F7F5EF" : "#0E0E0D");
+      }
+      try {
+        apply(localStorage.getItem("ifd-theme") === "light" ? "light" : "dark");
+      } catch (e) {
+        apply("dark");
+      }
+      // Back-forward cache can restore a painted page with a stale class.
+      window.addEventListener("pageshow", function (ev) {
+        if (!ev.persisted) return;
+        try {
+          apply(localStorage.getItem("ifd-theme") === "light" ? "light" : "dark");
+        } catch (e) { /* ignore */ }
+      });
+    })();
+  </script>
+</head>
+<body>
+
+<!-- Visible until app.js finishes /api/me and shows login or browser. -->
+<div class="boot" id="screen-boot" role="status" aria-live="polite" aria-busy="true">
+  <div class="boot__mark">
+    <span class="boot__square" aria-hidden="true"></span>
+    <span data-drive-name>Drive</span>
+  </div>
+  <div class="boot__spin" aria-hidden="true"></div>
+  <div class="boot__label">Loading…</div>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 9h5M2 15h5M17 9h5M17 15h5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.6-3.6a2 2 0 0 0-2.8 0L6 20"/></symbol>
+  <symbol id="i-audio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M8 13h8M8 17h5"/></symbol>
+  <symbol id="i-zip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 6h1M10 9h1M10 12h1M10 15h1"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+  <symbol id="i-folder-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6M9 13h6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.14-6.86a1 1 0 0 0 0-1.72L9.5 4.28A1 1 0 0 0 8 5.14Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4.2" height="16" rx="1.4"/><rect x="13.8" y="4" width="4.2" height="16" rx="1.4"/></symbol>
+  <symbol id="i-back-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4 6 8l5 4"/><path d="M6 8h6a7 7 0 1 1-7 7"/><text x="12" y="18.5" font-size="7.5" font-family="ui-monospace,monospace" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle">10</text></symbol>
+  <symbol id="i-fwd-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 4 5 4-5 4"/><path d="M18 8h-6a7 7 0 1 0 7 7"/><text x="12" y="18.5" font-size="7.5" font-family="ui-monospace,monospace" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle">10</text></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+  <symbol id="i-vol-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></symbol>
+  <symbol id="i-fs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V4h5M21 9V4h-5M3 15v5h5M21 15v5h-5"/></symbol>
+  <symbol id="i-fs-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5"/></symbol>
+  <symbol id="i-pip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h5"/><rect x="12" y="12" width="10" height="8" rx="1.5"/></symbol>
+  <symbol id="i-zoom-in" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M20 20l-4.3-4.3"/></symbol>
+  <symbol id="i-zoom-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4.3-4.3"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></symbol>
+  <symbol id="i-wrap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 18h7"/><path d="M3 12h14a3 3 0 0 1 0 6h-3"/><path d="m16 15-2 3 2 3"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.17 6.81a1 1 0 0 0-3.98-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.63l4.36-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></symbol>
+  <!-- Soft-delete bin: tapered wastebasket (distinct from rectangular i-trash) -->
+  <symbol id="i-recycle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M4 7h16"/><path d="M18.5 7 17.3 19.2A2 2 0 0 1 15.3 21H8.7a2 2 0 0 1-2-1.8L5.5 7"/><path d="M10 11v5M14 11v5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c4.97 0 8.43 3.37 9.94 6.65a1 1 0 0 1 0 .7 10.75 10.75 0 0 1-1.44 2.49"/><path d="M14.08 14.16a3 3 0 0 1-4.24-4.24"/><path d="M17.48 17.5A10.75 10.75 0 0 1 2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 4.45-5.14"/><path d="m2 2 20 20"/></symbol>
+  <symbol id="i-arrow-u" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-up-dir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-hdd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01M10 16h.01"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></symbol>
+</defs></svg>
+
+<!-- =====================================================================
+     Login / unauthorized
+     ===================================================================== -->
+<div class="login" id="screen-login" hidden>
+  <div class="login__hero">
+    <div class="wordmark">
+      <span class="wordmark__mark" aria-hidden="true"></span>
+      <span class="wordmark__name" data-drive-name>Drive</span>
+    </div>
+    <div class="login__pitch">
+      <span class="eyebrow">Ugreen NAS · Web drive</span>
+      <h1 data-drive-name>Drive</h1>
+      <p>Your NAS folders in the browser, with the same permissions you have in UGOS. Fast on the home network, and reachable from anywhere.</p>
+    </div>
+    <div class="login__meta">
+      <span id="login-host"></span>
+      <span id="login-storage"></span>
+    </div>
+  </div>
+
+  <div class="login__panel">
+    <!-- Default: sign-in -->
+    <div class="login__form" id="login-signin">
+      <span class="eyebrow">Sign in</span>
+      <h2>Sign in with your NAS account</h2>
+      <p>Use the same username and password as the UGOS web interface.</p>
+      <form class="login__nas" id="nas-form">
+        <label class="login__label">
+          NAS username
+          <input class="field" id="nas-username" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required />
+        </label>
+        <label class="login__label" id="nas-password-wrap">
+          Password
+          <input class="field" id="nas-password" name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <label class="login__label" id="nas-otp-wrap" hidden>
+          Two-factor code
+          <input class="field" id="nas-otp" name="otp" inputmode="numeric" autocomplete="one-time-code" />
+        </label>
+        <p class="login__error" id="nas-error" hidden></p>
+        <button class="btn btn--primary" type="submit" id="nas-submit">Sign in</button>
+      </form>
+
+      <div id="login-google" hidden>
+        <div class="login__or"><span>or</span></div>
+        <a class="login__google" href="/auth/login"><span>G</span>Continue with Google</a>
+      </div>
+
+      <div id="login-email" hidden>
+        <div class="login__or"><span>or get a code by email</span></div>
+        <form class="login__nas" id="email-sign-in-form">
+          <label class="login__label">
+            Email address
+            <input class="field" id="sign-in-email" name="email" type="email" autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="254" required />
+          </label>
+          <p id="email-sign-in-status" role="status" hidden>If this email is linked to a NAS account, we’ve sent a six-digit code. Check your inbox and spam folder. The code expires in 10 minutes.</p>
+          <label class="login__label" id="email-code-wrap" hidden>
+            Sign-in code
+            <input class="field" id="sign-in-email-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" />
+          </label>
+          <p class="login__error" id="email-sign-in-error" role="alert" hidden></p>
+          <button class="btn" type="submit" id="email-sign-in-submit">Email me a code</button>
+          <div class="login__actions" id="email-code-actions" hidden>
+            <button class="btn" type="button" id="email-code-resend">Resend code</button>
+            <button class="btn" type="button" id="email-code-change">Use a different email</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="login__foot">
+        <span>No account? Ask whoever runs this NAS.</span>
+        <span class="login__foot-links">
+          <a href="https://github.com/neelsatyavolu/ugreen-drive" target="_blank" rel="noopener">ugreen-drive<svg width="12" height="12"><use href="#i-ext"></use></svg></a>
+        </span>
+      </div>
+    </div>
+
+    <!-- Google / email sign-in that isn't linked to a NAS user -->
+    <div class="login__form" id="login-denied" hidden>
+      <div class="denied-badge"><svg width="20" height="20"><use href="#i-lock"></use></svg></div>
+      <h2>This email isn’t linked yet</h2>
+      <p id="denied-detail"></p>
+      <p>An admin can link it to a NAS account in Settings → People. Until then, sign in with your NAS username and password.</p>
+      <div class="login__actions">
+        <a class="btn btn--primary" href="/">Back to sign-in</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     Browser
+     ===================================================================== -->
+<div class="shell" id="screen-browser" hidden data-drawer="closed">
+  <div class="sidebar__scrim" id="drawer-scrim"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__brand">
+      <span class="wordmark__mark" aria-hidden="true"></span>
+      <span data-drive-name>Drive</span>
+    </div>
+    <div class="lan-badge" id="lan-badge" hidden aria-live="polite"></div>
+    <div class="sidebar__label" id="quick-fav-label" hidden>Favorites</div>
+    <nav class="sidebar__nav sidebar__nav--quick" id="quick-favorites" aria-label="Favorites"></nav>
+    <div class="sidebar__label" id="quick-rec-label" hidden>Recent</div>
+    <nav class="sidebar__nav sidebar__nav--quick" id="quick-recents" aria-label="Recent folders"></nav>
+    <div class="sidebar__label">Folders</div>
+    <nav class="sidebar__nav" id="shortcuts" aria-label="Folder tree"></nav>
+
+    <div class="sidebar__storage" id="storage-block" hidden>
+      <div class="sidebar__storage-row">
+        <span id="storage-label" title="Space on the volume that holds this shared folder">NAS volume</span>
+        <span id="storage-text"></span>
+      </div>
+      <div class="meter" role="meter" aria-label="NAS volume usage"><div id="storage-bar"></div></div>
+    </div>
+
+    <div class="sidebar__admin">
+      <button type="button" class="sidebar__tool" id="btn-finder">
+        <svg width="15" height="15"><use href="#i-hdd"></use></svg>
+        <span>Connect in Finder</span>
+      </button>
+      <button type="button" class="sidebar__tool" id="btn-speedtest">
+        <svg width="15" height="15"><use href="#i-refresh"></use></svg>
+        <span>Speed test</span>
+      </button>
+      <button type="button" class="sidebar__tool" id="btn-settings" hidden>
+        <svg width="15" height="15"><use href="#i-gear"></use></svg>
+        <span>Settings</span>
+      </button>
+      <a id="admin-link" href="#" target="_blank" rel="noopener" hidden>
+        <svg width="15" height="15"><use href="#i-shield"></use></svg>
+        <span>UGOS control panel</span>
+        <svg width="12" height="12" style="opacity:.6"><use href="#i-ext"></use></svg>
+      </a>
+    </div>
+
+    <div class="sidebar__user">
+      <div class="user-card">
+        <div class="user-card__avatar" id="user-avatar"></div>
+        <div class="user-card__text">
+          <div class="user-card__name" id="user-name"></div>
+          <div class="user-card__nas" id="user-nas"></div>
+        </div>
+        <button type="button" id="btn-logout" title="Log out" aria-label="Log out">
+          <svg width="15" height="15"><use href="#i-logout"></use></svg>
+        </button>
+      </div>
+    </div>
+
+    <div
+      class="sidebar__resize"
+      id="sidebar-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      title="Drag to resize"
+      tabindex="0"
+    ></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__row">
+        <button type="button" class="icon-btn topbar__menu" id="btn-drawer" title="Menu" aria-label="Open folder menu">
+          <svg width="15" height="15"><use href="#i-menu"></use></svg>
+        </button>
+        <button type="button" class="icon-btn" id="btn-up" title="Up one level" aria-label="Up one level">
+          <svg width="15" height="15"><use href="#i-up-dir"></use></svg>
+        </button>
+        <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
+        <div class="topbar__tools">
+          <div class="search" id="search-wrap">
+            <svg class="search__glyph" width="15" height="15" aria-hidden="true"><use href="#i-search"></use></svg>
+            <input
+              type="search"
+              id="search"
+              placeholder="Search files &amp; folders"
+              aria-label="Search files and folders"
+              autocomplete="off"
+              spellcheck="false"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="search-panel"
+              aria-expanded="false"
+              aria-haspopup="listbox"
+            />
+            <kbd class="search__hint" id="search-hint" title="Press ⌘K or / to search">/</kbd>
+            <div class="search-panel" id="search-panel" role="listbox" hidden></div>
+          </div>
+          <button type="button" class="icon-btn" id="btn-refresh" title="Refresh" aria-label="Refresh">
+            <svg width="15" height="15" id="refresh-icon"><use href="#i-refresh"></use></svg>
+          </button>
+          <button type="button" class="icon-btn" id="btn-theme" title="Toggle theme" aria-label="Toggle theme">
+            <svg width="15" height="15"><use href="#i-sun" id="theme-icon"></use></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="actionbar">
+        <div id="default-bar">
+          <button type="button" class="btn btn--primary" id="btn-upload" aria-haspopup="menu" aria-expanded="false">
+            <svg width="15" height="15"><use href="#i-upload"></use></svg>Upload
+            <svg width="12" height="12" class="btn__chev" aria-hidden="true"><use href="#i-chev-d"></use></svg>
+          </button>
+          <button type="button" class="btn" id="btn-new-folder">
+            <svg width="15" height="15"><use href="#i-folder-plus"></use></svg>New folder
+          </button>
+          <button type="button" class="btn btn--danger" id="btn-empty-recycle" hidden title="Permanently erase everything in Recycle (NAS admins)">
+            <svg width="15" height="15"><use href="#i-recycle"></use></svg>Empty Recycle
+          </button>
+          <div class="spacer"></div>
+          <span class="count-label" id="count-label"></span>
+          <button type="button" class="btn" id="btn-sort-by" title="Sort listing" aria-haspopup="menu" aria-expanded="false">
+            <svg width="12" height="12" class="sort-by__arrow" aria-hidden="true"><use href="#i-arrow-u"></use></svg>
+            <span id="sort-by-label">Name</span>
+          </button>
+          <button type="button" class="icon-btn" id="btn-hidden" title="Hide dot files" aria-label="Hide dot files" aria-pressed="false">
+            <svg width="15" height="15"><use href="#i-eye"></use></svg>
+          </button>
+          <button type="button" class="icon-btn" id="btn-density" title="Row density" aria-label="Toggle row density">
+            <svg width="15" height="15"><use href="#i-list"></use></svg>
+          </button>
+          <div class="segmented">
+            <button type="button" id="btn-view-list" title="List view" aria-label="List view" aria-pressed="true"><svg width="14" height="14"><use href="#i-list"></use></svg></button>
+            <button type="button" id="btn-view-grid" title="Grid view" aria-label="Grid view" aria-pressed="false"><svg width="14" height="14"><use href="#i-grid"></use></svg></button>
+          </div>
+        </div>
+
+        <div id="selection-bar" hidden>
+          <span class="sel-pill" id="sel-label"></span>
+          <button type="button" class="btn" id="btn-download"><svg width="15" height="15"><use href="#i-download"></use></svg>Download</button>
+          <button type="button" class="btn" id="btn-copy-link" title="Recipients need Drive access"><svg width="15" height="15"><use href="#i-copy"></use></svg>Copy link</button>
+          <button type="button" class="btn" id="btn-copy-path"><svg width="15" height="15"><use href="#i-copy"></use></svg>Copy path</button>
+          <button type="button" class="btn" id="btn-rename"><svg width="15" height="15"><use href="#i-pencil"></use></svg>Rename</button>
+          <button type="button" class="btn" id="btn-move"><svg width="15" height="15"><use href="#i-move"></use></svg>Move</button>
+          <button type="button" class="btn btn--danger" id="btn-delete"><svg width="15" height="15"><use href="#i-trash"></use></svg>Delete</button>
+          <div class="spacer"></div>
+          <button type="button" class="btn btn--quiet" id="btn-clear-sel"><svg width="14" height="14"><use href="#i-x"></use></svg>Clear</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- Loading -->
+      <div id="state-loading" hidden>
+        <div class="panel">
+          <div class="skel__head">
+            <div class="skel__chip"></div>
+            <div class="skel__bar" style="width:60px"></div>
+            <div class="skel__bar" style="width:44px"></div>
+            <div class="skel__bar" style="width:36px"></div>
+            <div class="skel__bar" style="width:66px"></div>
+            <div></div>
+          </div>
+          <div id="skeleton-rows"></div>
+        </div>
+        <div class="loading-note">
+          <svg width="13" height="13"><use href="#i-refresh"></use></svg>
+          <span id="loading-text">Reading the NAS…</span>
+        </div>
+      </div>
+
+      <!-- Empty folder -->
+      <div class="state" id="state-empty" hidden>
+        <div class="state__icon"><svg width="24" height="24"><use href="#i-folder"></use></svg></div>
+        <div class="state__title">Nothing in here yet</div>
+        <p>This folder is empty. Drop files anywhere on this page to upload them, or start a folder for the next cut.</p>
+        <div class="state__actions">
+          <button type="button" class="btn btn--primary" data-act="upload"><svg width="15" height="15"><use href="#i-upload"></use></svg>Upload</button>
+          <button type="button" class="btn" data-act="newfolder"><svg width="15" height="15"><use href="#i-folder-plus"></use></svg>New folder</button>
+        </div>
+      </div>
+
+      <!-- No search matches -->
+      <div class="state" id="state-nomatch" hidden>
+        <div class="state__icon"><svg width="24" height="24"><use href="#i-search"></use></svg></div>
+        <div class="state__title">No matches</div>
+        <p id="nomatch-text"></p>
+        <div class="state__actions">
+          <button type="button" class="btn" data-act="clear-search">Clear search</button>
+        </div>
+      </div>
+
+      <!-- Load error / permission denied -->
+      <div class="state" id="state-error" hidden>
+        <div class="state__icon state__icon--warn"><svg width="24" height="24"><use href="#i-lock"></use></svg></div>
+        <div class="state__title" id="error-title">Can't open this folder</div>
+        <p id="error-text"></p>
+        <div class="state__actions">
+          <button type="button" class="btn btn--primary" id="btn-unlock-personal" data-act="unlock-personal" hidden>Unlock folder</button>
+          <button type="button" class="btn btn--primary" data-act="retry"><svg width="15" height="15"><use href="#i-refresh"></use></svg>Try again</button>
+          <button type="button" class="btn" data-act="root">Back to Drive root</button>
+        </div>
+      </div>
+
+      <!-- List view -->
+      <div id="state-list" hidden>
+        <div class="panel rows" id="rows" data-density="comfortable" data-sort="asc">
+          <div class="rows__head">
+            <button type="button" class="checkbox" id="check-all" role="checkbox" aria-checked="false" aria-label="Select all">
+              <svg width="11" height="11"><use href="#i-check"></use></svg>
+            </button>
+            <button type="button" class="sort is-active" data-sort="name" title="Sort by name">Name<svg width="11" height="11"><use href="#i-arrow-u"></use></svg></button>
+            <button type="button" class="sort" data-sort="kind" data-col="kind" title="Sort by kind">Kind<svg width="11" height="11"><use href="#i-arrow-u"></use></svg></button>
+            <button type="button" class="sort" data-sort="size" data-col="size" title="Sort by size">Size<svg width="11" height="11"><use href="#i-arrow-u"></use></svg></button>
+            <button type="button" class="sort" data-sort="mtime" data-col="mod" title="Sort by date modified">Modified<svg width="11" height="11"><use href="#i-arrow-u"></use></svg></button>
+            <span></span>
+          </div>
+          <div id="rows-body"></div>
+        </div>
+        <div class="list-foot">
+          <span id="list-foot-count"></span>
+          <span>Type a name to jump · Shift-click to range-select · ? for shortcuts</span>
+        </div>
+      </div>
+
+      <!-- Grid view -->
+      <div class="grid" id="state-grid" hidden></div>
+    </div>
+  </main>
+</div>
+
+<!-- Upload tray -->
+<div class="uploads" id="upload-tray" hidden>
+  <div class="uploads__head">
+    <svg width="15" height="15"><use href="#i-upload" id="upload-tray-icon"></use></svg>
+    <span class="uploads__title" id="upload-title"></span>
+    <button type="button" class="uploads__close" id="upload-close" aria-label="Close"><svg width="14" height="14"><use href="#i-x"></use></svg></button>
+  </div>
+  <div class="uploads__overall" id="upload-overall" hidden>
+    <div class="uploads__overall-bar" id="upload-overall-bar"></div>
+  </div>
+  <div class="uploads__list" id="upload-list"></div>
+  <div class="uploads__foot">
+    <span id="upload-foot"></span>
+    <button type="button" id="upload-cancel">Cancel all</button>
+  </div>
+</div>
+
+<!-- Drop overlay -->
+<div class="dropzone" id="dropzone" hidden>
+  <div class="dropzone__inner">
+    <svg width="34" height="34"><use href="#i-upload"></use></svg>
+    <div class="dropzone__title">Drop to upload</div>
+    <div class="dropzone__sub" id="dropzone-sub"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" hidden role="status" aria-live="polite">
+  <svg width="15" height="15"><use href="#i-check" id="toast-icon"></use></svg>
+  <span id="toast-text"></span>
+  <button class="toast__action" id="toast-action" type="button" hidden></button>
+</div>
+
+<!-- Modal host -->
+<div class="scrim" id="scrim" hidden></div>
+
+<input type="file" id="file-input" multiple hidden />
+<input type="file" id="folder-input" webkitdirectory directory multiple hidden />
+<script src="/assets/app.js?v=20261026-ugd1" type="module"></script>
+</body>
+</html>

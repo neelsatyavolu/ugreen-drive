@@ -1,0 +1,42 @@
+# ugreen-drive on a Ugreen NAS (UGOS Pro).
+# UGOS: Docker → Project → Create, paste this file, Deploy.
+# Then open http://<NAS-IP>:8790 and sign in with your UGOS account.
+services:
+  ugreen-drive:
+    image: ghcr.io/neelsatyavolu/ugreen-drive:latest
+    container_name: ugreen-drive
+    restart: unless-stopped
+    # Host network: reaches the UGOS sign-in API on 127.0.0.1 and serves on <NAS-IP>:8790.
+    network_mode: host
+    environment:
+      # Optional. Everything here can also be set later in the drive's Settings.
+      # PUBLIC_BASE_URL: https://drive.example.com
+      # DRIVE_NAME: My Drive
+      # WEB_PORT: "8790"
+      TZ: UTC
+    volumes:
+      # Every storage volume you want to browse (add /volume2, /volume3, ...).
+      - /volume1:/data/volume1
+      # UGOS personal folders.
+      - /home:/data/home:rslave
+      # NAS accounts, groups and the shared-folder list (read-only).
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
+      - /etc:/host-etc:ro
+      # Settings, generated secrets and sign-in state.
+      - ./config:/config
+    cap_add:
+      - SETUID
+      - SETGID
+
+  # Optional: reach the drive from anywhere through a Cloudflare Tunnel.
+  # Create a tunnel in Cloudflare Zero Trust with a public hostname pointing at
+  # http://localhost:8790, paste its token below, and uncomment.
+  # tunnel:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: ugreen-drive-tunnel
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: paste-your-tunnel-token
