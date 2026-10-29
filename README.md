@@ -11,6 +11,7 @@ It's a fork of [InFocus Drive](https://github.com/neelsatyavolu/infocus-drive), 
 - **NAS sign-in.** Use your UGOS username and password, including UGOS two-factor codes. Every file operation runs as that NAS user, so UGOS permissions stay in charge.
 - **More ways to sign in (optional).** Admins can turn on Google sign-in or emailed codes in Settings, and link each email to a NAS account.
 - **File manager.** List and grid views, a folder tree, drag-and-drop moves, rename, new folder, delete to the shared folder's Recycle Bin, search, and folders downloaded as ZIP.
+- **Personal folders.** UGOS personal folders appear next to the shared folders. Encrypted ones can be unlocked with the UGOS encryption password or key file.
 - **Big uploads.** Chunked, parallel and resumable, with several upload worker processes so one CPU core isn't the limit. Folder uploads can replace or merge, and merge skips files that haven't changed.
 - **Previews.** Images, video and audio (with seeking), PDF, text and Markdown. Video thumbnails come from ffmpeg.
 - **Share links.** Expiring public links for a file or a whole folder.
@@ -29,7 +30,7 @@ You need a Ugreen NAS on UGOS Pro with the Docker app installed (App Center → 
 
 That's all for use at home. The first start creates its own secrets in the project's `config` folder, so there's nothing to fill in.
 
-**On a Mac:** in the drive, open **Connect in Finder** and paste the install line into Terminal. The menu-bar app opens, you click **Sign in**, approve it in the browser, and the drive appears in Finder.
+**On a Mac:** in the drive, open **Connect in Finder** and paste the install line into Terminal. The menu-bar app opens, you click **Sign in**, approve it in the browser, and the drive appears in Finder. To use the NAS's own SMB server instead, see [docs/FINDER-NETWORK-DRIVE.md](docs/FINDER-NETWORK-DRIVE.md).
 
 ### Use it away from home (Cloudflare Tunnel)
 
