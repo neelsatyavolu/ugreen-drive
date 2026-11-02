@@ -12,12 +12,16 @@ const request = {
 };
 
 function applyTheme() {
-  let light = false;
+  // Saved "light"/"dark" wins; otherwise follow prefers-color-scheme.
+  let mode = null;
   try {
-    light = localStorage.getItem("ifd-theme") === "light";
+    mode = localStorage.getItem("ifd-theme");
   } catch {
-    light = false;
+    mode = null;
   }
+  const light = mode === "light" || mode === "dark"
+    ? mode === "light"
+    : Boolean(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
   document.documentElement.classList.toggle("light", light);
 }
 

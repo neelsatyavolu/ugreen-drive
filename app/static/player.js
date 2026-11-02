@@ -2,10 +2,10 @@
  * Brand-native media transport for the preview lightbox.
  *
  * Replaces the browser's default <video>/<audio> chrome with controls that
- * match the Machine & Ink system: accent scrub track, buffered range, hover
+ * match the Blackletter system (DESIGN.md): accent scrub track, buffered range, hover
  * scrub tooltip, tabular time readout, speed / PiP / fullscreen.
  */
-import { el, icon } from "./dom.js?v=20261027-mac";
+import { el, icon } from "./dom.js?v=20261101-blackletter";
 
 const VOLUME_KEY = "ifd-volume";
 const MUTED_KEY = "ifd-muted";

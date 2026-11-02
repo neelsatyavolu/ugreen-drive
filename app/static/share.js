@@ -1,10 +1,10 @@
 /**
  * Public shared file / folder page. No Drive chrome, no session.
  */
-import { el, icon } from "./dom.js?v=20261027-mac";
-import { describeKind, displayName, formatSize, previewKind } from "./format.js?v=20261027-mac";
-import { enhanceMarkdownPreview, isMarkdown } from "./markdown.js?v=20261027-mac";
-import { createMediaPlayer } from "./player.js?v=20261027-mac";
+import { el, icon } from "./dom.js?v=20261101-blackletter";
+import { describeKind, displayName, formatSize, previewKind } from "./format.js?v=20261101-blackletter";
+import { enhanceMarkdownPreview, isMarkdown } from "./markdown.js?v=20261101-blackletter";
+import { createMediaPlayer } from "./player.js?v=20261101-blackletter";
 
 const THEME_KEY = "ifd-theme";
 const TEXT_LIMIT_BYTES = 1_500_000;
@@ -29,20 +29,28 @@ function tokenFromPath() {
   }
 }
 
-function applyTheme(theme) {
-  const light = theme === "light";
+// Theme mode: "system" follows prefers-color-scheme; "light"/"dark" override it.
+const THEME_ORDER = ["system", "light", "dark"];
+const LIGHT_QUERY = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+
+function applyTheme(mode) {
+  const m = THEME_ORDER.includes(mode) ? mode : "system";
+  const light = m === "light" || (m === "system" && !!LIGHT_QUERY && LIGHT_QUERY.matches);
   const root = document.documentElement;
   root.classList.toggle("light", light);
-  root.dataset.theme = light ? "light" : "dark";
+  if (m === "system") root.removeAttribute("data-theme");
+  else root.dataset.theme = m;
   root.style.colorScheme = light ? "light" : "dark";
   const scheme = document.getElementById("meta-color-scheme");
   const color = document.getElementById("meta-theme-color");
   if (scheme) scheme.setAttribute("content", light ? "light" : "dark");
-  if (color) color.setAttribute("content", light ? "#f4f6f5" : "#0f110f");
+  if (color) color.setAttribute("content", light ? "#FCFCFD" : "#000000");
   const use = document.getElementById("share-theme-icon");
-  if (use) use.setAttribute("href", light ? "#i-moon" : "#i-sun");
+  if (use) use.setAttribute("href", m === "system" ? "#i-monitor" : m === "light" ? "#i-sun" : "#i-moon");
+  const btn = document.getElementById("share-theme");
+  if (btn) btn.title = `Theme: ${m}`;
   try {
-    localStorage.setItem(THEME_KEY, light ? "light" : "dark");
+    localStorage.setItem(THEME_KEY, m);
   } catch {
     /* private mode */
   }
@@ -50,9 +58,10 @@ function applyTheme(theme) {
 
 function storedTheme() {
   try {
-    return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+    const t = localStorage.getItem(THEME_KEY);
+    return THEME_ORDER.includes(t) ? t : "system";
   } catch {
-    return "dark";
+    return "system";
   }
 }
 
@@ -339,7 +348,12 @@ async function boot() {
   const themeBtn = document.getElementById("share-theme");
   if (themeBtn) {
     themeBtn.addEventListener("click", () => {
-      applyTheme(storedTheme() === "light" ? "dark" : "light");
+      applyTheme(THEME_ORDER[(THEME_ORDER.indexOf(storedTheme()) + 1) % THEME_ORDER.length]);
+    });
+  }
+  if (LIGHT_QUERY) {
+    LIGHT_QUERY.addEventListener("change", () => {
+      if (storedTheme() === "system") applyTheme("system");
     });
   }
 

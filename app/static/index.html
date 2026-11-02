@@ -4,46 +4,46 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" id="meta-color-scheme" />
-  <meta name="theme-color" content="#0E0E0D" id="meta-theme-color" />
+  <meta name="theme-color" content="#000000" id="meta-theme-color" />
   <title>Drive</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20261027-mac" />
-  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=20261027-mac" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20261101-blackletter" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=20261101-blackletter" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="modulepreload" href="/assets/app.js?v=20261027-mac" />
-  <link rel="modulepreload" href="/assets/api.js?v=20261027-mac" />
-  <link rel="modulepreload" href="/assets/format.js?v=20261027-mac" />
-  <link rel="modulepreload" href="/assets/dom.js?v=20261027-mac" />
-  <link rel="modulepreload" href="/assets/quick.js?v=20261027-mac" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;family=Newsreader:opsz,wght@6..72,400;6..72,500&amp;display=swap" />
+  <link rel="modulepreload" href="/assets/app.js?v=20261101-blackletter" />
+  <link rel="modulepreload" href="/assets/api.js?v=20261101-blackletter" />
+  <link rel="modulepreload" href="/assets/format.js?v=20261101-blackletter" />
+  <link rel="modulepreload" href="/assets/dom.js?v=20261101-blackletter" />
+  <link rel="modulepreload" href="/assets/quick.js?v=20261101-blackletter" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500&amp;family=Geist+Mono:wght@400&amp;display=swap" />
   <!-- Critical theme paint before app.css — stops reload FOUC (light sidebar / dark main). -->
   <style id="ugd-theme-critical">
-    html, body { margin: 0; background: #0E0E0D; color: #F2F0EA; color-scheme: dark; }
-    html.light, html.light body { background: #F7F5EF; color: #16161A; color-scheme: light; }
+    html, body { margin: 0; background: #000000; color: #FCFDFF; color-scheme: dark; }
+    html.light, html.light body { background: #FCFCFD; color: #0A0A0C; color-scheme: light; }
     /* Sidebar uses --sb-* once CSS loads; pin shell bg so sticky rail never flashes white. */
-    .sidebar { background: #0E0E0D !important; }
-    html.light .sidebar { background: #F7F5EF !important; }
+    .sidebar { background: #000000 !important; }
+    html.light .sidebar { background: #FCFCFD !important; }
     /* Boot splash: paints before JS/CSS modules so cold loads aren't a blank black page. */
     .boot {
       position: fixed; inset: 0; z-index: 9999;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 18px; background: #0E0E0D; color: #F2F0EA;
-      font-family: "Geist Mono", ui-monospace, Menlo, monospace;
+      gap: 18px; background: #000000; color: #FCFDFF;
+      font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
       transition: opacity .18s cubic-bezier(0.16, 1, 0.3, 1), visibility .18s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .boot[hidden] { display: none !important; }
     .boot.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
-    html.light .boot { background: #F7F5EF; color: #16161A; }
+    html.light .boot { background: #FCFCFD; color: #0A0A0C; }
     .boot__mark { display: flex; align-items: center; gap: 12px; }
-    .boot__square { width: 14px; height: 14px; background: #4C8DFF; display: block; }
+    .boot__square { width: 14px; height: 14px; background: #4C8DFF; border-radius: 4px; display: block; }
     .boot__mark span[data-drive-name] {
-      font-weight: 500; letter-spacing: -0.01em; font-size: 21px; line-height: 1; color: inherit; text-transform: uppercase;
+      font-weight: 500; letter-spacing: -0.02em; font-size: 21px; line-height: 1; color: inherit;
     }
     .boot__label {
-      font-size: 12px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase;
-      color: rgba(242,240,234,.45);
+      font-size: 13px; font-weight: 400;
+      color: #888E90;
     }
-    html.light .boot__label { color: rgba(22,22,26,.45); }
+    html.light .boot__label { color: #7A7F82; }
     .boot__spin {
       width: 22px; height: 22px; border-radius: 50%;
       border: 2px solid rgba(76,141,255,.22);
@@ -56,32 +56,32 @@
       .boot { transition: none; }
     }
   </style>
-  <link rel="stylesheet" href="/assets/app.css?v=20261027-mac" />
+  <link rel="stylesheet" href="/assets/app.css?v=20261101-blackletter" />
   <script>
     // Sync theme class + browser color-scheme before first paint (and after bfcache).
     (function () {
-      function apply(theme) {
+      // Saved "light"/"dark" wins; otherwise follow prefers-color-scheme (dark if unknown).
+      function apply(mode) {
         var root = document.documentElement;
-        var light = theme === "light";
+        var explicit = mode === "light" || mode === "dark";
+        var light = explicit ? mode === "light"
+          : !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
         root.classList.toggle("light", light);
-        root.dataset.theme = light ? "light" : "dark";
+        if (explicit) root.dataset.theme = mode; else root.removeAttribute("data-theme");
         root.style.colorScheme = light ? "light" : "dark";
         var scheme = document.getElementById("meta-color-scheme");
         var color = document.getElementById("meta-theme-color");
         if (scheme) scheme.setAttribute("content", light ? "light" : "dark");
-        if (color) color.setAttribute("content", light ? "#F7F5EF" : "#0E0E0D");
+        if (color) color.setAttribute("content", light ? "#FCFCFD" : "#000000");
       }
-      try {
-        apply(localStorage.getItem("ifd-theme") === "light" ? "light" : "dark");
-      } catch (e) {
-        apply("dark");
+      function saved() {
+        try { return localStorage.getItem("ifd-theme"); } catch (e) { return null; }
       }
+      apply(saved());
       // Back-forward cache can restore a painted page with a stale class.
       window.addEventListener("pageshow", function (ev) {
         if (!ev.persisted) return;
-        try {
-          apply(localStorage.getItem("ifd-theme") === "light" ? "light" : "dark");
-        } catch (e) { /* ignore */ }
+        apply(saved());
       });
     })();
   </script>
@@ -138,6 +138,7 @@
   <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
@@ -351,7 +352,7 @@
             <svg width="15" height="15" id="refresh-icon"><use href="#i-refresh"></use></svg>
           </button>
           <button type="button" class="icon-btn" id="btn-theme" title="Toggle theme" aria-label="Toggle theme">
-            <svg width="15" height="15"><use href="#i-sun" id="theme-icon"></use></svg>
+            <svg width="15" height="15"><use href="#i-monitor" id="theme-icon"></use></svg>
           </button>
         </div>
       </div>
@@ -518,6 +519,6 @@
 
 <input type="file" id="file-input" multiple hidden />
 <input type="file" id="folder-input" webkitdirectory directory multiple hidden />
-<script src="/assets/app.js?v=20261027-mac" type="module"></script>
+<script src="/assets/app.js?v=20261101-blackletter" type="module"></script>
 </body>
 </html>

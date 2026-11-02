@@ -1,10 +1,10 @@
 /**
  * ugreen-drive — file browser front end.
- * Talks to the FastAPI backend in api.js and renders the Machine & Ink UI.
+ * Talks to the FastAPI backend in api.js and renders the Blackletter UI (DESIGN.md).
  */
-import { bindEmailSignIn } from "./email-sign-in.js?v=20261027-mac";
-import * as api from "./api.js?v=20261027-mac";
-import { ApiError } from "./api.js?v=20261027-mac";
+import { bindEmailSignIn } from "./email-sign-in.js?v=20261101-blackletter";
+import * as api from "./api.js?v=20261101-blackletter";
+import { ApiError } from "./api.js?v=20261101-blackletter";
 import {
   describeKind,
   displayName,
@@ -20,9 +20,9 @@ import {
   isUnderRecycle,
   pathParts,
   previewKind,
-} from "./format.js?v=20261027-mac";
-import { $, el, icon, show } from "./dom.js?v=20261027-mac";
-import { openSettingsModal } from "./settings.js?v=20261027-mac";
+} from "./format.js?v=20261101-blackletter";
+import { $, el, icon, show } from "./dom.js?v=20261101-blackletter";
+import { openSettingsModal } from "./settings.js?v=20261101-blackletter";
 import {
   setQuickScope,
   listFavorites,
@@ -31,7 +31,7 @@ import {
   listRecents,
   pushRecent,
   removePath,
-} from "./quick.js?v=20261027-mac";
+} from "./quick.js?v=20261101-blackletter";
 
 const THEME_KEY = "ifd-theme";
 const VIEW_KEY = "ifd-view";
@@ -648,26 +648,35 @@ function toast(message, kind = "ok", opts = {}) {
    Theme — keep html class, data-theme, color-scheme, and meta in lockstep.
    Partial switches on reload came from FOUC + only toggling .light late.
    --------------------------------------------------------------------------- */
-function applyTheme(theme) {
-  const light = theme === "light";
+// Theme mode: "system" follows prefers-color-scheme; "light"/"dark" override it.
+const THEME_ORDER = ["system", "light", "dark"];
+const LIGHT_QUERY = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+
+function applyTheme(mode) {
+  const m = THEME_ORDER.includes(mode) ? mode : "system";
+  const light = m === "light" || (m === "system" && !!LIGHT_QUERY && LIGHT_QUERY.matches);
   const root = document.documentElement;
   root.classList.toggle("light", light);
-  root.dataset.theme = light ? "light" : "dark";
+  if (m === "system") root.removeAttribute("data-theme");
+  else root.dataset.theme = m;
   root.style.colorScheme = light ? "light" : "dark";
 
   const schemeMeta = document.getElementById("meta-color-scheme");
   const colorMeta = document.getElementById("meta-theme-color");
   if (schemeMeta) schemeMeta.setAttribute("content", light ? "light" : "dark");
-  if (colorMeta) colorMeta.setAttribute("content", light ? "#f4f6f5" : "#0f110f");
+  if (colorMeta) colorMeta.setAttribute("content", light ? "#FCFCFD" : "#000000");
 
   const icon = $("theme-icon");
-  if (icon) icon.setAttribute("href", light ? "#i-moon" : "#i-sun");
+  if (icon) icon.setAttribute("href", m === "system" ? "#i-monitor" : m === "light" ? "#i-sun" : "#i-moon");
+  const btn = $("btn-theme");
+  if (btn) btn.title = `Theme: ${m}`;
 
-  store(THEME_KEY, light ? "light" : "dark");
+  store(THEME_KEY, m);
 }
 
 function storedTheme() {
-  return readStored(THEME_KEY, "dark") === "light" ? "light" : "dark";
+  const t = readStored(THEME_KEY, "system");
+  return THEME_ORDER.includes(t) ? t : "system";
 }
 
 /* ---------------------------------------------------------------------------
@@ -2409,7 +2418,7 @@ function openPreview(item) {
     downloadItems([item]);
     return;
   }
-  import("./viewer.js?v=20261027-mac").then(({ openPreview: openViewer }) => {
+  import("./viewer.js?v=20261101-blackletter").then(({ openPreview: openViewer }) => {
     openViewer(item, {
       siblings: visibleItems().filter((entry) => previewKind(entry)),
       downloadUrl: api.downloadUrl,
@@ -4524,8 +4533,13 @@ function bindEvents() {
   });
 
   $("btn-theme").addEventListener("click", () => {
-    applyTheme(document.documentElement.classList.contains("light") ? "dark" : "light");
+    applyTheme(THEME_ORDER[(THEME_ORDER.indexOf(storedTheme()) + 1) % THEME_ORDER.length]);
   });
+  if (LIGHT_QUERY) {
+    LIGHT_QUERY.addEventListener("change", () => {
+      if (storedTheme() === "system") applyTheme("system");
+    });
+  }
 
   // bfcache / multi-tab: re-sync if storage or restored snapshot drifted.
   window.addEventListener("pageshow", (event) => {

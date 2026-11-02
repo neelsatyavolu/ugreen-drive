@@ -5,10 +5,10 @@
  * per preview kind. The host app injects modal plumbing and download actions
  * so this module stays free of app.js internals.
  */
-import { el, icon } from "./dom.js?v=20261027-mac";
-import { describeKind, displayName, formatSize, previewKind } from "./format.js?v=20261027-mac";
-import { createMediaPlayer } from "./player.js?v=20261027-mac";
-import { enhanceMarkdownPreview, isMarkdown } from "./markdown.js?v=20261027-mac";
+import { el, icon } from "./dom.js?v=20261101-blackletter";
+import { describeKind, displayName, formatSize, previewKind } from "./format.js?v=20261101-blackletter";
+import { createMediaPlayer } from "./player.js?v=20261101-blackletter";
+import { enhanceMarkdownPreview, isMarkdown } from "./markdown.js?v=20261101-blackletter";
 
 const TEXT_LIMIT_BYTES = 1_500_000;
 const ZOOM_MIN = 1;
